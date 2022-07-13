@@ -20,7 +20,8 @@ class FullyConnectedModel(nn.Module):
             nn.Linear(32 * 32 * 3, 128, bias=True),
             nn.Linear(128, 256, bias=True),
             nn.Linear(256, 512, bias=True),
-            nn.Linear(512, 512, bias=True),
+            nn.Linear(512, 1024, bias=True),
+            nn.Linear(1024, 512, bias=True),
             nn.Linear(512, 256, bias=True),
             nn.Linear(256, 64, bias=True),
             nn.Linear(64, 10, bias=False),
@@ -48,13 +49,14 @@ class ConvolutionalModel(nn.Module):
         self.convs = nn.ModuleList([
             nn.LazyConv2d(64, (3, 3), padding='valid', bias=True),
             nn.LazyConv2d(128, (3, 3), padding='valid', bias=True),
+            nn.LazyConv2d(256, (3, 3), padding='same', bias=True),
             nn.LazyConv2d(256, (3, 3), padding='valid', bias=True),
             nn.LazyConv2d(128, (3, 3), padding='valid', bias=True),
             nn.LazyConv2d(64, (3, 3), padding='valid', bias=True),
         ])
         self.dense = nn.LazyLinear(64, bias=True)
         self.output_layer = nn.LazyLinear(10, bias=False)
-        self.relu = F.leaky_relu
+        self.relu = F.relu
         self.softmax = F.softmax
         self.dropout = F.dropout
         self.pool = F.max_pool2d
@@ -159,18 +161,17 @@ def main():
         [T.ToTensor(),
          T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    batch_size = 256
+    batch_size = 64
     cpu_num = 6 if os.cpu_count() > 6 else os.cpu_count()
 
-    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform,
-                                            download=True)
+    dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
+    d_len = len(dataset)
+    trainset, validset = torch.utils.data.random_split(dataset, [int(d_len * .7), int(d_len * .3)],
+                                                       generator=torch.Generator().manual_seed(42))
     trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
                                               shuffle=True, num_workers=cpu_num, pin_memory=True)
-
-    testset = torchvision.datasets.CIFAR10(root='./data', train=False, transform=transform,
-                                           download=True)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size,
-                                             shuffle=False, num_workers=cpu_num, pin_memory=True)
+    validloader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False,
+                                              num_workers=cpu_num, pin_memory=True)
 
     classes = ('plane', 'car', 'bird', 'cat',
                'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
@@ -208,18 +209,18 @@ def main():
 
 
     """定義 image augmentation，並將其套用至 dataset 中"""
-
     transform = T.Compose([
-        T.RandomAffine(degrees=(-15, 15), translate=(0.1, 0.2), scale=(0.85, 1)),
-        T.RandomCrop(size=27),
+        T.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.2), scale=(0.9, 1)),
+        T.RandomCrop(size=30),
         T.Resize(size=32),
-        T.ColorJitter(brightness=(.8, 1.1), hue=(-.1, .1)),
+        T.ColorJitter(brightness=(.8, 1.1), contrast=.1, saturation=.3),
         T.ToTensor(),
         T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
 
-    trainset_aug = torchvision.datasets.CIFAR10(root='./data', train=True,
-                                                download=True, transform=transform)
+    dataset_aug = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    trainset_aug, _ = torch.utils.data.random_split(dataset_aug, [int(d_len * .7), int(d_len * .3)],
+                                                    generator=torch.Generator().manual_seed(42))
     trainloader_aug = torch.utils.data.DataLoader(trainset_aug, batch_size=batch_size,
                                                   shuffle=True, num_workers=cpu_num, pin_memory=True)
     grid_num = 15
@@ -229,11 +230,12 @@ def main():
     grid_example_img_aug = torchvision.utils.make_grid(images[:grid_num ** 2], grid_num, value_range=(-1, 1), normalize=True)
 
     plt.close()
-    fig, ax = plt.subplots(1, 2, figsize=(20, 40), clear=True)
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5), clear=True)
     ax[0].imshow(np.transpose(grid_example_img, (1, 2, 0)))
     ax[0].set_title('Without Augmentation')
     ax[1].imshow(np.transpose(grid_example_img_aug, (1, 2, 0)))
     ax[1].set_title('With Augmentation')
+    plt.show()
 
     """#### 影像增強範例"""
 
@@ -241,7 +243,7 @@ def main():
     img = T.ToTensor()(img)
     transform_list = [
         ['Random Flip', T.RandomHorizontalFlip(p=1.)],
-        ['Random Color', T.ColorJitter(brightness=(.75, 1.25), hue=(-.3, .3))],
+        ['Random Color', T.ColorJitter(brightness=(.75, 1.25), hue=.1, contrast=.3, saturation=.3)],
         ['Random Rotation', T.RandomRotation(degrees=(-45, 45))],
         ['Random Scale', T.RandomAffine(degrees=(0, 0), translate=(0, 0), scale=(0.5, .85))],
     ]
@@ -275,21 +277,25 @@ def main():
     except:
         print(f'dir already existed: {model_dir}')
 
-    epochs = 50
-    lr = 5e-4
+    epochs = 100
+    lr = 1e-4
 
     model_seq = zip(
         (model_cnn, model_fc, model_cnn_aug, model_fc_aug),
         (False, False, True, True),
         ('model_cnn', 'model_fc', 'model_cnn_aug', 'model_fc_aug')
     )
+    cnt = 0
     for model, aug, name in model_seq:
+        cnt += 1
+        if cnt % 2 == 0:
+            continue
         print(f'Training model: {name}')
         model.cuda()
         model.train()
         writer = SummaryWriter(os.path.join(model_dir, name))
         loader_train = trainloader if not aug else trainloader_aug
-        fit(epochs, lr, model, loader_train, testloader, writer, train_len=len(trainset))
+        fit(epochs, lr, model, loader_train, validloader, writer, train_len=len(trainset))
         model.eval()
         writer.add_graph(model, torch.rand_like(images, device=device))
         writer.close()
