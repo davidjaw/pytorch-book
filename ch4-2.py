@@ -119,7 +119,7 @@ def evaluate(net, data_loader):
     return loss, accu
 
 
-def fit(epochs, lr, net, train_loader, val_loader, writer, train_len, opt_func=torch.optim.Adam):
+def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.Adam):
     optimizer = opt_func(net.parameters(), lr)
     step = 0
     for epoch in range(epochs):
@@ -161,8 +161,11 @@ def main():
         [T.ToTensor(),
          T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    batch_size = 64
+    batch_size = 128
     cpu_num = 6 if os.cpu_count() > 6 else os.cpu_count()
+    if os.name == 'nt':
+        # cpu num > 1 will slowing down in windows, not sure why
+        cpu_num = 1
 
     dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
     d_len = len(dataset)
@@ -173,22 +176,8 @@ def main():
     validloader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False,
                                               num_workers=cpu_num, pin_memory=True)
 
-    classes = ('plane', 'car', 'bird', 'cat',
-               'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-
-    """創建 `iterator` 來拿取範例影像"""
-
     dataiter = iter(trainloader)
     images, labels = dataiter.next()
-    """將影像用 torchvision 的工具轉換成 `grid_num` x `grid_num` 的組合圖像，再利用 matplotlib 顯示圖片"""
-
-    grid_num = 15
-    grid_example_img = torchvision.utils.make_grid(images[:grid_num ** 2], grid_num, value_range=(-1, 1), normalize=True)
-
-    plt.close()
-    plt.figure(figsize=(10, 10))
-    plt.imshow(np.transpose(grid_example_img, (1, 2, 0)))
-    plt.show()
 
     model_fc = FullyConnectedModel()
     model_fc.cuda()
@@ -223,62 +212,16 @@ def main():
                                                     generator=torch.Generator().manual_seed(42))
     trainloader_aug = torch.utils.data.DataLoader(trainset_aug, batch_size=batch_size,
                                                   shuffle=True, num_workers=cpu_num, pin_memory=True)
-    grid_num = 15
 
-    dataiter = iter(trainloader_aug)
-    images, labels = dataiter.next()
-    grid_example_img_aug = torchvision.utils.make_grid(images[:grid_num ** 2], grid_num, value_range=(-1, 1), normalize=True)
-
-    plt.close()
-    fig, ax = plt.subplots(1, 2, figsize=(10, 5), clear=True)
-    ax[0].imshow(np.transpose(grid_example_img, (1, 2, 0)))
-    ax[0].set_title('Without Augmentation')
-    ax[1].imshow(np.transpose(grid_example_img_aug, (1, 2, 0)))
-    ax[1].set_title('With Augmentation')
-    plt.show()
-
-    """#### 影像增強範例"""
-
-    img = Image.open('gjeDs00.png')
-    img = T.ToTensor()(img)
-    transform_list = [
-        ['Random Flip', T.RandomHorizontalFlip(p=1.)],
-        ['Random Color', T.ColorJitter(brightness=(.75, 1.25), hue=.1, contrast=.3, saturation=.3)],
-        ['Random Rotation', T.RandomRotation(degrees=(-45, 45))],
-        ['Random Scale', T.RandomAffine(degrees=(0, 0), translate=(0, 0), scale=(0.5, .85))],
-    ]
-
-    plt.close()
-    fig, ax = plt.subplots(len(transform_list), 4, figsize=(12.5, 13.5), clear=True)
-
-    def dim_fixup(img):
-        return torch.permute(img, (1, 2, 0))
-
-    for x in range(4):
-        ax[x, 0].imshow(dim_fixup(img))
-        ax[x, 0].set_title('Original')
-        if x > 0:
-            for index, (trans_name, trans_func) in enumerate(transform_list):
-                ax[index, x].imshow(dim_fixup(trans_func(img)))
-                ax[index, x].set_title(trans_name)
-
-    plt.show()
-
-    """## 實驗：CIFAR-10 類神經網路訓練
-    先在 Colab 載入 tensorboard plugin，並初始化訓練資訊儲存的資料夾:
-    """
-
-    # Commented out IPython magic to ensure Python compatibility.
     from torch.utils.tensorboard import SummaryWriter
-    # %load_ext tensorboard
     model_dir = 'models'
     try:
         os.mkdir(model_dir)
     except:
         print(f'dir already existed: {model_dir}')
 
-    epochs = 100
-    lr = 1e-4
+    epochs = 150
+    lr = 3e-4
 
     model_seq = zip(
         (model_cnn, model_fc, model_cnn_aug, model_fc_aug),
@@ -295,7 +238,7 @@ def main():
         model.train()
         writer = SummaryWriter(os.path.join(model_dir, name))
         loader_train = trainloader if not aug else trainloader_aug
-        fit(epochs, lr, model, loader_train, validloader, writer, train_len=len(trainset))
+        fit(epochs, lr, model, loader_train, validloader, writer)
         model.eval()
         writer.add_graph(model, torch.rand_like(images, device=device))
         writer.close()

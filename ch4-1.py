@@ -14,7 +14,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision
+import torchvision.transforms as T
 from torchsummary import summary
+import matplotlib.pyplot as plt
+from PIL import Image
 
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -86,7 +90,81 @@ def example_2():
 
     import matplotlib.pyplot as plt
     figure_size = 5
-    plt.figure(figsize=(figure_size * len(kernels), figure_size))
+    plt.figure(figsize=(figure_size * (len(kernels) - 1), figure_size))
     plt.imshow(img_out[0, :, :, 0], interpolation='nearest', vmin=0, vmax=1, cmap='gray')
+    plt.show()
+
+
+def example_3():
+    # examples for data augmentation
+    dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=T.ToTensor(), download=True)
+    grid_num = 15
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=grid_num ** 2, shuffle=True, num_workers=1)
+
+    """創建 `iterator` 來拿取範例影像"""
+    dataiter = iter(dataloader)
+    images, labels = dataiter.next()
+    """將影像用 torchvision 的工具轉換成 `grid_num` x `grid_num` 的組合圖像，再利用 matplotlib 顯示圖片"""
+    grid_example_img = torchvision.utils.make_grid(images[:grid_num ** 2], grid_num, value_range=(0, 1), normalize=True)
+
+    plt.close()
+    plt.figure(figsize=(10, 10))
+    plt.imshow(np.transpose(grid_example_img, (1, 2, 0)))
+    plt.show()
+
+    """定義 image augmentation，並將其套用至 dataset 中"""
+    transform = T.Compose([
+        T.RandomAffine(degrees=(-5, 5), translate=(0.1, 0.2), scale=(0.9, 1)),
+        T.RandomCrop(size=30),
+        T.Resize(size=32),
+        T.ColorJitter(brightness=(.8, 1.1), contrast=.15, saturation=.15),
+        T.ToTensor(),
+    ])
+
+    dataset_aug = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    dataloader_aug = torch.utils.data.DataLoader(dataset_aug, batch_size=grid_num ** 2, shuffle=True, num_workers=1)
+    dataiter = iter(dataloader_aug)
+    images, labels = dataiter.next()
+    grid_example_img_aug = torchvision.utils.make_grid(images[:grid_num ** 2], grid_num, value_range=(0, 1), normalize=True)
+
+    plt.close()
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5), clear=True)
+    ax[0].imshow(np.transpose(grid_example_img, (1, 2, 0)))
+    ax[0].set_title('Without Augmentation')
+    ax[1].imshow(np.transpose(grid_example_img_aug, (1, 2, 0)))
+    ax[1].set_title('With Augmentation')
+    plt.show()
+
+
+def example_4():
+    """#### 影像增強範例"""
+    img = Image.open('gjeDs00.png')
+    img = T.ToTensor()(img)
+    transform_list = [
+        ['Random Flip', T.RandomHorizontalFlip(p=1.)],
+        ['Random Color', T.ColorJitter(brightness=(.75, 1.25), hue=.1, contrast=.3, saturation=.3)],
+        ['Random Rotation', T.RandomRotation(degrees=(-45, 45))],
+        ['Random Scale', T.RandomAffine(degrees=(0, 0), translate=(0, 0), scale=(0.5, .85))],
+    ]
+
+    plt.close()
+    fig, ax = plt.subplots(len(transform_list), 4, figsize=(12.5, 13.5), clear=True)
+
+    def dim_fixup(img):
+        return torch.permute(img, (1, 2, 0))
+
+    for x in range(4):
+        ax[x, 0].imshow(dim_fixup(img))
+        ax[x, 0].set_title('Original')
+        if x > 0:
+            for index, (trans_name, trans_func) in enumerate(transform_list):
+                ax[index, x].imshow(dim_fixup(trans_func(img)))
+                ax[index, x].set_title(trans_name)
+
+    plt.show()
+
+
+if __name__ == '__main__':
+    example_4()
 
 
