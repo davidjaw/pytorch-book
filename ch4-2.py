@@ -58,7 +58,6 @@ class ConvolutionalModel(nn.Module):
         self.output_layer = nn.LazyLinear(10, bias=False)
         self.relu = F.relu
         self.softmax = F.softmax
-        self.dropout = F.dropout
         self.pool = F.max_pool2d
 
     def forward(self, x):
@@ -69,7 +68,6 @@ class ConvolutionalModel(nn.Module):
                 x = self.pool(x, 3, 2)
         x = self.flatten(x, 1)
         x = self.dense(x)
-        x = self.dropout(x, .5)
         x = self.output_layer(x)
         x = self.softmax(x, -1)
         return x
@@ -119,7 +117,7 @@ def evaluate(net, data_loader):
     return loss, accu
 
 
-def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.Adam):
+def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.AdamW):
     optimizer = opt_func(net.parameters(), lr)
     step = 0
     for epoch in range(epochs):
@@ -220,7 +218,7 @@ def main():
     except:
         print(f'dir already existed: {model_dir}')
 
-    epochs = 150
+    epochs = 200
     lr = 3e-4
 
     model_seq = zip(
@@ -231,8 +229,6 @@ def main():
     cnt = 0
     for model, aug, name in model_seq:
         cnt += 1
-        if cnt % 2 == 0:
-            continue
         print(f'Training model: {name}')
         model.cuda()
         model.train()
