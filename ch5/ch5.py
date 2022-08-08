@@ -12,6 +12,7 @@ class ConvNet(nn.Module):
     def __init__(self, use_bn=False):
         super().__init__()
         place_holder = lambda x: nn.BatchNorm2d(x) if use_bn else nn.Identity()
+        place_holder_1d = lambda x: nn.BatchNorm1d(x) if use_bn else nn.Identity()
         self.layers = nn.ModuleList([
             nn.Conv2d(3, 64, (3, 3)),
             place_holder(64),
@@ -30,8 +31,8 @@ class ConvNet(nn.Module):
             place_holder(64),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(64 * 7 * 7, 64),
-            place_holder(64),
+            nn.Linear(64 * 5 * 5, 64),
+            place_holder_1d(64),
             nn.ReLU(),
             nn.Dropout(.5),
             nn.Linear(64, 10, bias=False),
@@ -80,7 +81,7 @@ def image_transform_loader(img_size, with_aug=False, p=.5, flip_h=True, flip_v=F
         if crop_center:
             transform_list += [T.CenterCrop(size=img_size)]
         if rotate:
-            transform_list += [T.RandomRotation(degrees=15)]
+            transform_list += [T.RandomRotation(degrees=5)]
     transform_list += [T.Resize(size=img_size)]
     transform_list += [T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     return T.Compose(transform_list)
@@ -112,9 +113,9 @@ def main():
         # cpu num > 1 will slowing down in windows, not sure why
         cpu_num = 1
 
-    transform = image_transform_loader(32)
-    transform_aug = image_transform_loader(32, with_aug=True, flip_v=True, contrast=True, sharpness=True,
-                                           crop_rand=True, rotate=True)
+    img_size = 28
+    transform = image_transform_loader(img_size)
+    transform_aug = image_transform_loader(img_size, with_aug=True, rotate=True, flip_v=True, contrast=True, sharpness=True)
     dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
     dataset_aug = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform_aug, download=True)
     d_len = len(dataset)
@@ -142,12 +143,12 @@ def main():
         print(f'dir already existed: {model_dir}')
 
     epochs = 200
-    lr = 3e-4
+    lr = 5e-4
 
     model_seq = zip(
         ('xavier', 'he', 'normal', 'xavier'),
-        (False, False, False, True),
-        ('model_xavier', 'model_he', 'model_normal', 'model_bn')
+        (True, False, False, False),
+        ('model_bn', 'model_he', 'model_normal', 'model_xavier')
     )
     cnt = 0
     for init_method, use_bn, name in model_seq:
@@ -158,7 +159,6 @@ def main():
         model.cuda()
         model.train()
         writer = SummaryWriter(os.path.join(model_dir, name))
-        loader_train = loader_train
         fit(epochs, lr, model, loader_train, loader_valid, writer)
         model.eval()
         writer.add_graph(model, torch.rand_like(images, device=device))
