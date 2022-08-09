@@ -54,7 +54,7 @@ def evaluate(net, data_loader):
     return loss, accu
 
 
-def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.Adam):
+def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.AdamW):
     """ 對網路進行訓練和測試，並藉由 tensorboard 進行紀錄 """
     optimizer = opt_func(net.parameters(), lr)
     step = 0
