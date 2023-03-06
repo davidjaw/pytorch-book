@@ -1,4 +1,7 @@
 .idea
 data
+dataset
 models**
 model**
+log*
+runs*

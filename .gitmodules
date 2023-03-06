@@ -1,0 +1,6 @@
+[submodule "ch15/ConvNeXt-v2"]
+	path = ch15/ConvNeXt-v2
+	url = https://github.com/facebookresearch/ConvNeXt-V2
+[submodule "ch12/yolov7"]
+	path = ch12/yolov7
+	url = https://github.com/WongKinYiu/yolov7
