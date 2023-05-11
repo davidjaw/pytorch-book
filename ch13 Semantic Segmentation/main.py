@@ -115,7 +115,7 @@ def train(model, dataloader, criterion, optimizer):
         outputs = model(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
-        optimizer.step
+        optimizer.step()
         running_loss += loss.item()
     return running_loss / len(dataloader)
 
