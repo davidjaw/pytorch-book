@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -116,40 +117,48 @@ class VAE(nn.Module):
         return x_hat, mu, log_var
 
 
-# Initialize model and optimizer
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = VAE(z_dim=2).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+def main():
+    # Initialize model and optimizer
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = VAE(z_dim=2).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-# Load the MNIST dataset
-transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
-train_dataset = torchvision.datasets.MNIST(root='./data', train=True, transform=transform, download=True)
-train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=0, pin_memory=True)
+    # Load the MNIST dataset
+    cpu_num = 4 if os.cpu_count() > 4 else os.cpu_count()
+    if os.name == 'nt':
+        # cpu num > 0 has speed issue on windows
+        cpu_num = 0
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+    train_dataset = torchvision.datasets.MNIST(root='./data', train=True, transform=transform, download=True)
+    train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=cpu_num, pin_memory=True)
 
-# Initialize TensorBoard callback
-log_dir = './logs'
-callback = TensorBoardCallback(log_dir, z_dim=2)
-model.eval()
-dummy_input = torch.rand(1, 1, 28, 28).to(device)
-callback.writer.add_graph(model, dummy_input)
+    # Initialize TensorBoard callback
+    log_dir = './logs'
+    callback = TensorBoardCallback(log_dir, z_dim=2)
+    model.eval()
+    dummy_input = torch.rand(1, 1, 28, 28).to(device)
+    callback.writer.add_graph(model, dummy_input)
 
-# Train the model
-num_epochs = 10
-step = 0
-for epoch in range(num_epochs):
-    for i, (images, _) in enumerate(train_loader):
-        model.train()
-        images = images.to(device)
-        optimizer.zero_grad()
-        x_hat, mu, log_var = model(images)
-        reconstruction_loss = F.binary_cross_entropy(x_hat, images, reduction='sum')
-        kl_divergence = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
-        loss = reconstruction_loss + kl_divergence
-        loss.backward()
-        optimizer.step()
-        if i % 100 == 0:
-            callback(model, images, None, [reconstruction_loss, kl_divergence], step)
-            print("Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}".format(epoch + 1, num_epochs, i + 1, len(train_loader),
-                                                                     loss.item()))
-            step += 1
+    # Train the model
+    num_epochs = 10
+    step = 0
+    for epoch in range(num_epochs):
+        for i, (images, _) in enumerate(train_loader):
+            model.train()
+            images = images.to(device)
+            optimizer.zero_grad()
+            x_hat, mu, log_var = model(images)
+            reconstruction_loss = F.binary_cross_entropy(x_hat, images, reduction='sum')
+            kl_divergence = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+            loss = reconstruction_loss + kl_divergence
+            loss.backward()
+            optimizer.step()
+            if i % 100 == 0:
+                callback(model, images, None, [reconstruction_loss, kl_divergence], step)
+                print("Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}".format(epoch + 1, num_epochs, i + 1, len(train_loader),
+                                                                         loss.item()))
+                step += 1
 
+
+if __name__ == '__main__':
+    main()

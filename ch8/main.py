@@ -25,12 +25,12 @@ def chap821():
     summary(model, input_size)
 
     # 從 pytorch 官方 Github 上下載 "狗" 類別的圖片, 存到 'dog.jpg'
-    import urllib
-    url, filename = ("https://github.com/pytorch/hub/raw/master/images/dog.jpg", "dog.jpg")
+    import urllib.request
+    url, filename = "https://github.com/pytorch/hub/raw/master/images/dog.jpg", "dog.jpg"
     try:
-        urllib.URLopener().retrieve(url, filename)
-    except:
         urllib.request.urlretrieve(url, filename)
+    except Exception as e:
+        print(f'Error: Unable to retrieve {url} to {filename} ({e})')
     # 開啟圖片檔
     img_input = Image.open(filename)
 
@@ -48,7 +48,7 @@ def chap821():
     image = transform(img_input).unsqueeze(0)
     image = image.to(device)
 
-    # 将图像输入模型进行预测
+    # 將圖片送入模型進行預測
     output = model(image)
 
     # 創建一個SummaryWriter，將網路架構的可視化送入TensorBoard中
@@ -56,7 +56,7 @@ def chap821():
     writer.add_graph(model, image)
     writer.close()
 
-    # 解码输出结果
+    # 輸出預測結果
     top_k = torch.topk(torch.nn.functional.softmax(output, dim=1), k=5)
     classes = top_k.indices[0].tolist()
     probabilities = top_k.values[0].tolist()

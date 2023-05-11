@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 import torchvision
 from torchvision import transforms as T
 import matplotlib.pyplot as plt
@@ -55,6 +56,7 @@ def init_weights(method='xavier'):
                 torch.nn.init.kaiming_normal_(m.weight)
             elif method == 'noraml':
                 torch.nn.init.normal_(m.weight, std=1)
+
     return init
 
 
@@ -90,6 +92,7 @@ def image_transform_loader(img_size, with_aug=False, p=.5, flip_h=True, flip_v=F
 def forward_hook(net, index):
     def hook(model, input, output):
         net.layer_output[index] = output.detach().cpu().numpy()
+
     return hook
 
 
@@ -110,12 +113,13 @@ def main():
     batch_size = 128
     cpu_num = 6 if os.cpu_count() > 6 else os.cpu_count()
     if os.name == 'nt':
-        # cpu num > 1 will slowing down in windows, not sure why
-        cpu_num = 1
+        # cpu num > 0 has speed issue on windows
+        cpu_num = 0
 
     img_size = 28
     transform = image_transform_loader(img_size)
-    transform_aug = image_transform_loader(img_size, with_aug=True, rotate=True, flip_v=True, contrast=True, sharpness=True)
+    transform_aug = image_transform_loader(img_size, with_aug=True, rotate=True, flip_v=True, contrast=True,
+                                           sharpness=True)
     dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
     dataset_aug = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform_aug, download=True)
     d_len = len(dataset)
@@ -127,19 +131,19 @@ def main():
     train_subset = torch.utils.data.Subset(dataset_aug, train_indices)
     valid_subset = torch.utils.data.Subset(dataset_aug, valid_indices)
 
-    loader_train = torch.utils.data.DataLoader(train_subset, batch_size=batch_size,
-                                               shuffle=True, num_workers=cpu_num, pin_memory=True)
-    loader_valid = torch.utils.data.DataLoader(valid_subset, batch_size=batch_size, shuffle=False,
-                                               num_workers=cpu_num, pin_memory=True)
+    loader_train = DataLoader(train_subset, batch_size=batch_size,
+                              shuffle=True, num_workers=cpu_num, pin_memory=True)
+    loader_valid = DataLoader(valid_subset, batch_size=batch_size, shuffle=False,
+                              num_workers=cpu_num, pin_memory=True)
 
     dataiter = iter(loader_train)
-    images, labels = dataiter.next()
+    images, labels = next(dataiter)
 
     from torch.utils.tensorboard import SummaryWriter
     model_dir = 'models'
     try:
         os.mkdir(model_dir)
-    except:
+    except FileExistsError:
         print(f'dir already existed: {model_dir}')
 
     epochs = 200

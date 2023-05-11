@@ -3,12 +3,14 @@ import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
+from torch.utils.data import DataLoader
 from torchsummary import summary
 import os
 
 
 class FullyConnectedModel(nn.Module):
     """### Model 1: 全連接網路"""
+
     def __init__(self):
         super().__init__()
         self.flatten = torch.flatten
@@ -39,6 +41,7 @@ class FullyConnectedModel(nn.Module):
 
 class ConvolutionalModel(nn.Module):
     """### Model 2: 卷積神經網路"""
+
     def __init__(self):
         super().__init__()
         self.flatten = torch.flatten
@@ -165,22 +168,22 @@ def main():
          T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     batch_size = 128
-    cpu_num = 6 if os.cpu_count() > 6 else os.cpu_count()
+    cpu_num = 4 if os.cpu_count() > 4 else os.cpu_count()
     if os.name == 'nt':
-        # cpu num > 1 will slowing down in windows, not sure why
-        cpu_num = 1
+        # cpu num > 0 has speed issue on windows
+        cpu_num = 0
 
     dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
     d_len = len(dataset)
     trainset, validset = torch.utils.data.random_split(dataset, [int(d_len * .7), int(d_len * .3)],
                                                        generator=torch.Generator().manual_seed(42))
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
-                                              shuffle=True, num_workers=cpu_num, pin_memory=True)
-    validloader = torch.utils.data.DataLoader(validset, batch_size=batch_size, shuffle=False,
-                                              num_workers=cpu_num, pin_memory=True)
+    trainloader = DataLoader(trainset, batch_size=batch_size,
+                             shuffle=True, num_workers=cpu_num)
+    validloader = DataLoader(validset, batch_size=batch_size, shuffle=False,
+                             num_workers=cpu_num, pin_memory=True)
 
     dataiter = iter(trainloader)
-    images, labels = dataiter.next()
+    images, labels = next(dataiter)
 
     model_fc = FullyConnectedModel()
     model_fc.cuda()
@@ -219,7 +222,7 @@ def main():
     model_dir = 'models'
     try:
         os.mkdir(model_dir)
-    except:
+    except FileExistsError:
         print(f'dir already existed: {model_dir}')
 
     epochs = 200

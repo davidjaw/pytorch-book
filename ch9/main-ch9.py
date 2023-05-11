@@ -1,6 +1,7 @@
 import torch
 import torchvision
 from torchvision import transforms, datasets
+from torch.utils.data import random_split, DataLoader
 import os
 
 
@@ -29,17 +30,19 @@ def main():
     # Split the dataset into training and validation sets
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
+    train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
     # Apply the train and validation transforms to their respective subsets
     train_dataset.dataset.transform = train_transforms
     val_dataset.dataset.transform = val_transforms
 
+    cpu_num = 4 if os.cpu_count() > 4 else os.cpu_count()
+    if os.name == 'nt':
+        # cpu num > 0 has speed issue on windows
+        cpu_num = 0
     # Create data loaders for training and validation sets
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32,
-                                               shuffle=True, num_workers=4)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32,
-                                             shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=cpu_num)
+    val_loader = DataLoader(val_dataset, batch_size=32, shuffle=True, num_workers=cpu_num)
 
     dataloaders = {'train': train_loader, 'val': val_loader}
     dataset_sizes = {'train': len(train_dataset), 'val': len(val_dataset)}
@@ -62,14 +65,14 @@ def main():
     # Train the model
     num_epochs = 10
     for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch+1, num_epochs))
+        print('Epoch {}/{}'.format(epoch + 1, num_epochs))
         print('-' * 10)
 
         for phase in ['train', 'val']:
             if phase == 'train':
                 model.train()  # Set model to training mode
             else:
-                model.eval()   # Set model to evaluate mode
+                model.eval()  # Set model to evaluate mode
 
             running_loss = 0.0
             running_corrects = 0
@@ -110,4 +113,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
