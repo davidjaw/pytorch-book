@@ -4,3 +4,6 @@
 [submodule "ch12/yolov7"]
 	path = ch12/yolov7
 	url = https://github.com/WongKinYiu/yolov7
+[submodule "ch17/diffusion_model"]
+	path = ch17/diffusion_model
+	url = https://github.com/dome272/Diffusion-Models-pytorch.git
