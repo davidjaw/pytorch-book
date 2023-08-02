@@ -36,7 +36,7 @@ class TensorBoardCallback:
             output_grid = make_grid(recon_images, nrow=5, normalize=True)
             self.writer.add_image('input_images', input_grid, step)
             self.writer.add_image('output_images', output_grid, step)
-            mu, log_var = model.encoder(images)
+            mu, log_var = model.embed(images)
             encoded_z = model.reparameterize(mu, log_var)
             self.writer.add_histogram('mu', mu, step)
             self.writer.add_histogram('lv', log_var, step)

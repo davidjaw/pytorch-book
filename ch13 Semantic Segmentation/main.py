@@ -84,11 +84,13 @@ class SegUNet(SegNet):
         return x
 
 
-def train(model, dataloader, criterion, optimizer, write_img=True, denorm_func=None):
+def train(model, dataloader, criterion, optimizer, write_img=True, denorm_func=None, device=None):
     model.train()
     running_loss = 0.0
     for i, data in enumerate(dataloader, 0):
         batch_img, batch_trimap, batch_class, batch_sp, batch_breed = data
+        batch_img = batch_img.to(device)
+        batch_trimap = batch_trimap.to(device)
         optimizer.zero_grad()
         outputs = model(batch_img)
         loss = criterion(outputs, batch_trimap)
@@ -114,11 +116,13 @@ def train(model, dataloader, criterion, optimizer, write_img=True, denorm_func=N
     return running_loss / len(dataloader), debug_image
 
 
-def validate(model, dataloader, criterion):
+def validate(model, dataloader, criterion, device=None):
     model.eval()
     running_loss = 0.0
     for i, data in enumerate(dataloader, 0):
         batch_img, batch_trimap, batch_class, batch_sp, batch_breed = data
+        batch_img = batch_img.to(device)
+        batch_trimap = batch_trimap.to(device)
         with torch.no_grad():
             outputs = model(batch_img)
             loss = criterion(outputs, batch_trimap)
@@ -127,6 +131,8 @@ def validate(model, dataloader, criterion):
 
 
 if __name__ == '__main__':
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
     batch_size = 64
     learning_rate = 0.001
     num_epochs = 50
@@ -147,8 +153,8 @@ if __name__ == '__main__':
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=True)
     denorm_func = train_dataset.denorm
 
-    model = SegNet(3)
-    # model = SegUNet(3)
+    model = SegNet(3).to(device)
+    # model = SegUNet(3).to(device)
     train_loss = []
     val_loss = []
     criterion = nn.CrossEntropyLoss()
@@ -156,8 +162,8 @@ if __name__ == '__main__':
     writer = SummaryWriter()
 
     for epoch in range(num_epochs):
-        epoch_train_loss, debug_img = train(model, train_loader, criterion, optimizer, True, denorm_func)
-        epoch_val_loss = validate(model, valid_loader, criterion)
+        epoch_train_loss, debug_img = train(model, train_loader, criterion, optimizer, True, denorm_func, device)
+        epoch_val_loss = validate(model, valid_loader, criterion, device)
         train_loss.append(epoch_train_loss)
         val_loss.append(epoch_val_loss)
         print(f"Epoch {epoch + 1} - Training Loss: {epoch_train_loss:.4f}, Validation Loss: {epoch_val_loss:.4f}")
@@ -170,6 +176,4 @@ if __name__ == '__main__':
         writer.add_image('debug_image', debug_img, epoch)
         writer.add_scalar('train/loss', epoch_train_loss, epoch)
         writer.add_scalar('valid/loss', epoch_train_loss, epoch)
-
-        print()
 
