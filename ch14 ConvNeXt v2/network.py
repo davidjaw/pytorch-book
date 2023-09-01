@@ -42,7 +42,7 @@ class ResNetBlk(nn.Module):
         return x
 
 
-class Block(nn.Module):
+class ConvNeXtV2Block(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.dwconv = nn.Conv2d(dim, dim, kernel_size=7, padding=3, groups=dim)  # depthwise conv
@@ -135,19 +135,19 @@ class SegConvNextV2(nn.Module):
                     nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
                 ),
                 nn.Sequential(
-                    Block(64),
+                    ConvNeXtV2Block(64),
                     nn.Conv2d(64, 128, kernel_size=1, stride=1),
                     nn.MaxPool2d(2, 2),
                     LayerNorm(128, data_format='channels_first'),
                 ),
                 nn.Sequential(
-                    Block(128),
+                    ConvNeXtV2Block(128),
                     nn.Conv2d(128, 256, kernel_size=1),
                     nn.MaxPool2d(2, 2),
                     LayerNorm(256, data_format='channels_first'),
                 ),
                 nn.Sequential(
-                    Block(256),
+                    ConvNeXtV2Block(256),
                     nn.Conv2d(256, 512, kernel_size=1),
                     nn.MaxPool2d(2, 2),
                     LayerNorm(512, data_format='channels_first'),
@@ -189,8 +189,7 @@ class SegConvNextV2(nn.Module):
 
 if __name__ == '__main__':
     from torchinfo import summary
-    network = SegConvNextV2(3, network_type=1)
+    network = SegConvNextV2(3, network_type=2)
     random_in = torch.rand((32, 3, 64, 64))
     output = network(random_in)
     summary(network, input_size=(32, 3, 64, 64))
-    print()

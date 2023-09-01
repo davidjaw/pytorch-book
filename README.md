@@ -7,4 +7,4 @@ git clone https://github.com/davidjaw/pytorch-book.git
 git submodule --init --recursive
 ```
 
-* This repository use `python 3.10` and `pytorch 2.0`.
+* This repository use `python 3.10` and `pytorch 2.0.1`.
