@@ -4,16 +4,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 from torch.utils.data import DataLoader
-from torchsummary import summary
+from torchinfo import summary
+from torch.utils.tensorboard import SummaryWriter
 import os
 
 
 class FullyConnectedModel(nn.Module):
-    """### Model 1: 全連接網路"""
-
-    def __init__(self):
+    """" 全連接網路架構 """
+    def __init__(self, dropout_prob=0.3):
         super().__init__()
         self.flatten = torch.flatten
+        # 使用 nn.Linear 定義線性層，並將其加入 ModuleList 中
         self.dense = nn.ModuleList([
             nn.Linear(32 * 32 * 3, 128, bias=True),
             nn.Linear(128, 256, bias=True),
@@ -22,85 +23,82 @@ class FullyConnectedModel(nn.Module):
             nn.Linear(1024, 512, bias=True),
             nn.Linear(512, 256, bias=True),
             nn.Linear(256, 64, bias=True),
-            nn.Linear(64, 10, bias=False),
+            nn.Linear(64, 10, bias=False),  # 最後一層不使用 bias
         ])
+        # 定義激活函數和 dropout
         self.relu = F.relu
-        self.softmax = F.softmax
         self.dropout = F.dropout
+        # 定義 dropout 的機率
+        self.drop_p = dropout_prob
 
     def forward(self, x):
+        # 全連接網路會將圖片攤平成一維向量，因此需要使用 flatten
         x = self.flatten(x, 1)
+        # 使用 for 迴圈將線性層和激活函數進行連接
         for i in range(len(self.dense) - 1):
             x = self.dense[i](x)
             x = self.relu(x)
-            x = self.dropout(x, 0.3)
+            x = self.dropout(x, self.drop_p)
+        # 最後一層不使用激活函數
         x = self.dense[-1](x)
-        x = self.softmax(x, -1)
         return x
 
 
 class ConvolutionalModel(nn.Module):
-    """### Model 2: 卷積神經網路"""
-
+    """ 卷積神經網路 """
     def __init__(self):
         super().__init__()
         self.flatten = torch.flatten
+        # 這次使用 nn.Lazy 系列的函數，主要差別僅在於不需要指定輸入的 channel 數量
         self.convs = nn.ModuleList([
-            nn.LazyConv2d(64, (3, 3), padding='valid', bias=True),
-            nn.LazyConv2d(128, (3, 3), padding='valid', bias=True),
-            nn.LazyConv2d(256, (3, 3), padding='same', bias=True),
-            nn.LazyConv2d(256, (3, 3), padding='valid', bias=True),
-            nn.LazyConv2d(128, (3, 3), padding='valid', bias=True),
-            nn.LazyConv2d(64, (3, 3), padding='valid', bias=True),
+            nn.LazyConv2d(64, (3, 3),  padding=1, bias=True),
+            nn.LazyConv2d(128, (3, 3), padding=1, bias=True),
+            nn.LazyConv2d(256, (3, 3), padding=1, bias=True),
+            nn.LazyConv2d(256, (3, 3), padding=1, bias=True),
+            nn.LazyConv2d(128, (3, 3), padding=1, bias=True),
+            nn.LazyConv2d(64, (3, 3),  padding=1, bias=True),
         ])
+        # 定義線性層, 此處也使用 nn.LazyLinear 來定義
         self.dense = nn.LazyLinear(64, bias=True)
         self.output_layer = nn.LazyLinear(10, bias=False)
         self.relu = F.relu
-        self.softmax = F.softmax
         self.pool = F.max_pool2d
 
     def forward(self, x):
+        # 使用 for 迴圈將卷積層和激活函數進行連接
         for i in range(len(self.convs)):
             x = self.convs[i](x)
             x = self.relu(x)
             if i == 0:
+                # 第一層卷積層的輸出使用 max pooling
                 x = self.pool(x, 3, 2)
+        # 將輸出攤平成一維向量, 並使用線性層進行轉換
         x = self.flatten(x, 1)
         x = self.dense(x)
         x = self.output_layer(x)
-        x = self.softmax(x, -1)
         return x
 
 
-def loss_function(x, y):
-    loss = nn.CrossEntropyLoss()
-    return loss(x, y)
-
-
 def metric(x, y):
-    """ 計算 accuracy """
+    # 計算準確度
     x = torch.argmax(x, 1)
     accu = torch.sum(x == y) / y.shape[0] * 100
     return accu
 
 
-def training_step(batch, net):
-    """ 訓練一個 batch
-    將資料使用 Tensor.to 送到 GPU 以進行加速
-    """
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+def compute_loss_and_accuracy(batch, net, loss_func, device=None):
+    """ 計算一個 batch 的 loss 和 accuracy """
     x, y = batch
     x = x.to(device)
     y = y.to(device)
     outputs = net(x)
-    return loss_function(outputs, y), metric(outputs, y)
+    return loss_func(outputs, y), metric(outputs, y)
 
 
-def test_step(batch, net):
+def test_step(batch, net, loss_function, device=None):
     """ 測試一個 batch
     將資料使用 Tensor.to 送到 GPU 以進行加速
     """
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     x, y = batch
     x = x.to(device)
     y = y.to(device)
@@ -109,100 +107,102 @@ def test_step(batch, net):
     return loss.detach(), metric(outputs, y)
 
 
-def evaluate(net, data_loader):
+def evaluate(net, data_loader, loss_function, device):
     """ 對整個網路進行 validation set 的準確度判定 """
+    # 將網路透過 .eval() 轉換成 evaluation 模式, 這會影響到 dropout 和 batch normalization 等層的行為
     net.eval()
-    outputs = [test_step(batch, net) for batch in data_loader]
-    loss = []
-    accu = []
-    for o in outputs:
-        loss_batch, accu_batch = o
-        loss.append(loss_batch)
-        accu.append(accu_batch)
-    loss = torch.tensor(loss)
-    accu = torch.tensor(accu)
+    # 遍歷整個 data_loader, 並將每個 batch 透過 test_step 進行測試
+    loss_list, accu_list = [], []
+    for batch in data_loader:
+        loss_batch, accu_batch = test_step(batch, net, loss_function, device)
+        loss_list.append(loss_batch)
+        accu_list.append(accu_batch)
+
+    loss = torch.tensor(loss_list).mean()
+    accu = torch.tensor(accu_list).mean()
     return loss, accu
 
 
-def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.AdamW):
-    """ 對網路進行訓練和測試，並藉由 tensorboard 進行紀錄 """
+def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.AdamW, device=None):
+    """ 對網路進行訓練和測試, 並藉由 tensorboard writer 進行紀錄 """
+    # optimizer 必須將 learning rate 和要訓練的參數傳入, 這邊使用 net.parameters() 來取得所有參數
     optimizer = opt_func(net.parameters(), lr)
-    step = 0
+    # 定義 loss function
+    loss_func = nn.CrossEntropyLoss()
     for epoch in range(epochs):
+        # 紀錄每個 epoch 的 loss 和 accuracy
         train_loss = 0
         train_accu_total = 0
+        # 將網路用 .train() 方法將其設定為訓練模式
         net.train()
+        # 用 for loop 遍歷整個 train_loader 的資料
         for batch in train_loader:
-            loss, accu_train = training_step(batch, net)
+            # 使用 compute_loss_and_accuracy 計算該 batch 的 loss 和 accuracy
+            loss, accu_train = compute_loss_and_accuracy(batch, net, loss_func, device)
+            # 使用 .backward() 進行反向傳播
             loss.backward()
+            # 使用 .step() 進行 optimizer 的更新
             optimizer.step()
+            # 使用 .zero_grad() 將梯度歸零, 避免累加
             optimizer.zero_grad()
-            train_loss += loss.detach()
-            train_accu_total += accu_train
-            step += 1
-        loss_val, accu_val = evaluate(net, val_loader)
+            # 紀錄 loss 和 accuracy, .item() 方法可以將 tensor 從 GPU 中取出, 並轉成 python 的數值
+            train_loss += loss.item()
+            train_accu_total += accu_train.item()
+        # 訓練完一個 epoch 後, 計算 validation set 的 loss 和 accuracy
+        loss_val, accu_val = evaluate(net, val_loader, loss_func, device)
+
         if epoch % 10 == 0:
+            # 每 10 個 epoch 就印出一次訓練和測試的 loss
             print(f'[{epoch}/{epochs}] Training loss: {train_loss}, validation loss: {loss_val.sum()}')
-        # tensorboard
-        writer.add_scalar('loss/training', loss / len(train_loader), epoch)
-        writer.add_scalar('loss/validation', loss_val.mean(), epoch)
+
+        # tensorboard 相關紀錄
+        writer.add_scalar('loss/training', train_loss / len(train_loader), epoch)
+        writer.add_scalar('loss/validation', loss_val, epoch)
         writer.add_scalar('accu/training', train_accu_total / len(train_loader), epoch)
-        writer.add_scalar('accu/validation', accu_val.mean(), epoch)
+        writer.add_scalar('accu/validation', accu_val, epoch)
+        # 將網路的參數用 histogram 方法紀錄到 tensorboard 中
         for index, t in enumerate(net.parameters()):
             writer.add_histogram(f'v/{index:02d}', t, epoch)
 
 
-class CustomTransform(object):
-    def __init__(self, device):
-        self.device = device
-
-    def __call__(self, sample):
-        return sample.to(self.device)
-
-
 def main():
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    transform = T.Compose(
-        [T.ToTensor(),
-         T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     batch_size = 128
+    # 定義 dataloader 的 cpu 數量
     cpu_num = 4 if os.cpu_count() > 4 else os.cpu_count()
     if os.name == 'nt':
-        # cpu num > 0 has speed issue on windows
+        # Windows 系統的 dataloader 配合大於 0 的 cpu_num 可能會變很慢,
+        # 因此這邊判斷作業系統, 若為 windows 則將 cpu 數量設為 0
         cpu_num = 0
 
+    # 定義未使用 image augmentation 的 dataset 相關參數
+    transform = T.Compose([
+        T.ToTensor(),
+        T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
     dataset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
     d_len = len(dataset)
+    # 透過 random_split 將 dataset 分成 training set 和 validation set
     trainset, validset = torch.utils.data.random_split(dataset, [int(d_len * .7), int(d_len * .3)],
                                                        generator=torch.Generator().manual_seed(42))
-    trainloader = DataLoader(trainset, batch_size=batch_size,
-                             shuffle=True, num_workers=cpu_num)
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=cpu_num)
     validloader = DataLoader(validset, batch_size=batch_size, shuffle=False,
                              num_workers=cpu_num, pin_memory=True)
 
     dataiter = iter(trainloader)
     images, labels = next(dataiter)
+    images = images.to(device)
 
-    model_fc = FullyConnectedModel()
-    model_fc.cuda()
-    summary(model_fc, tuple(images.shape[1:]))
+    model_fc = FullyConnectedModel().to(device)
+    model_cnn = ConvolutionalModel().to(device)
 
-    model_cnn = ConvolutionalModel()
-    model_cnn.cuda()
-    # dummy forward to initialize parameters
-    dummy_input = torch.rand(images.shape).to(device)
-    model_cnn(dummy_input)
-    summary(model_cnn, tuple(images.shape[1:]))
+    summary(model_fc, input_data=images[:1])
+    summary(model_cnn, input_data=images[:1])
 
-    model_fc_aug = FullyConnectedModel()
-    model_cnn_aug = ConvolutionalModel()
-    model_fc_aug.cuda()
-    model_cnn_aug.cuda()
-    model_cnn_aug(dummy_input)
+    model_fc_aug = FullyConnectedModel().to(device)
+    model_cnn_aug = ConvolutionalModel().to(device)
 
-    """定義 image augmentation，並將其套用至 dataset 中"""
+    # 定義 image augmentation 會用到的 transformations, 並將其套用至 dataset 中
     transform = T.Compose([
         T.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.2), scale=(0.9, 1)),
         T.RandomCrop(size=30),
@@ -212,38 +212,39 @@ def main():
         T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
 
+    # 創建使用 image augmentation 的 dataset 和 dataloader
     dataset_aug = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
     trainset_aug, _ = torch.utils.data.random_split(dataset_aug, [int(d_len * .7), int(d_len * .3)],
                                                     generator=torch.Generator().manual_seed(42))
     trainloader_aug = torch.utils.data.DataLoader(trainset_aug, batch_size=batch_size,
                                                   shuffle=True, num_workers=cpu_num, pin_memory=True)
 
-    from torch.utils.tensorboard import SummaryWriter
+    # 創建 tensorboard 的 log 目錄
     model_dir = 'models'
-    try:
-        os.mkdir(model_dir)
-    except FileExistsError:
-        print(f'dir already existed: {model_dir}')
+    os.makedirs(model_dir, exist_ok=True)
 
+    # 定義訓練的超參數
     epochs = 200
     lr = 3e-4
 
+    # 定義要訓練的模型和相關參數
     model_seq = zip(
         (model_cnn, model_fc, model_cnn_aug, model_fc_aug),
-        (False, False, True, True),
-        ('model_cnn', 'model_fc', 'model_cnn_aug', 'model_fc_aug')
+        (False, False, True, True),                                 # whether to use augmentation
+        ('model_cnn', 'model_fc', 'model_cnn_aug', 'model_fc_aug')  # name of the model's log directory
     )
-    cnt = 0
+    # 開始訓練模型, model 代表要訓練的模型, aug 代表是否使用 image augmentation, name 代表 log 的目錄名稱
     for model, aug, name in model_seq:
-        cnt += 1
-        print(f'Training model: {name}')
-        model.cuda()
-        model.train()
+        print(f'開始訓練模型: {name}')
+        # 創建 tensorboard writer 來記錄訓練過程
         writer = SummaryWriter(os.path.join(model_dir, name))
+        # 依照 aug 選擇要使用的 dataloader
         loader_train = trainloader if not aug else trainloader_aug
-        fit(epochs, lr, model, loader_train, validloader, writer)
-        model.eval()
+        # 開始訓練
+        fit(epochs, lr, model, loader_train, validloader, writer, device=device)
+        # 在 tensorboard 中加入模型的結構
         writer.add_graph(model, torch.rand_like(images, device=device))
+        # 關閉 tensorboard writer
         writer.close()
 
 
