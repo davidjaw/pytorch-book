@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,12 +17,12 @@ def ex1_build_convolution_net():
     """ 卷積神經網路架構範例
     本範例會建立一個網路模型輸入大小為 3 x 28 x 28，並連接一層卷積層，再透過 torchinfo.summary 函數來觀察卷積層所使用的參數數量。
     最後我們使用上方的參數計算公式，驗證參數數量是否和圖中顯示的 896 一致，參數設定如下：
-    * 輸入影像（Input）：3x28x28（通道數, 長度, 寬度）。
-    * 填補（Padding）：無。
-    * 步幅（Stride）：1。
-    * 卷積核數量（Kernel number）：32個（kernel_numbers）。
-    * 卷積核大小（Kernel size）：3x3（〖kernel〗_height, kernel_width）。
-    * 偏差值（Bias）：有。
+    * 輸入影像（Input）：3x28x28（通道數, 長度, 寬度）
+    * 填補（Padding）：無
+    * 步幅（Stride）：1
+    * 卷積核數量（Kernel number）：32個
+    * 卷積核大小（Kernel size）：3x3（kernel height, kernel width）
+    * 偏差值（Bias）：有
     """
 
     # 初始化一個簡單的卷積神經網路，網路架構都會使用 nn.Module 來進行繼承

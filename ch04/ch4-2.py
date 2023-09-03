@@ -27,9 +27,10 @@ class FullyConnectedModel(nn.Module):
         ])
         # 定義激活函數和 dropout
         self.relu = F.relu
-        self.dropout = F.dropout
-        # 定義 dropout 的機率
-        self.drop_p = dropout_prob
+        # 定義 dropout
+        self.dropouts = nn.ModuleList([
+            nn.Dropout(dropout_prob) for _ in range(len(self.dense) - 1)
+        ])
 
     def forward(self, x):
         # 全連接網路會將圖片攤平成一維向量，因此需要使用 flatten
@@ -38,7 +39,7 @@ class FullyConnectedModel(nn.Module):
         for i in range(len(self.dense) - 1):
             x = self.dense[i](x)
             x = self.relu(x)
-            x = self.dropout(x, self.drop_p)
+            x = self.dropouts[i](x)
         # 最後一層不使用激活函數
         x = self.dense[-1](x)
         return x
@@ -80,8 +81,10 @@ class ConvolutionalModel(nn.Module):
 
 
 def metric(x, y):
-    # 計算準確度
+    """ 計算預測結果的 accuracy """
+    # 使用 torch.argmax 將預測結果轉換成類別的 index
     x = torch.argmax(x, 1)
+    # 使用 torch.sum 將預測正確的數量加總, 並除以總數量得到 accuracy
     accu = torch.sum(x == y) / y.shape[0] * 100
     return accu
 
@@ -95,31 +98,21 @@ def compute_loss_and_accuracy(batch, net, loss_func, device=None):
     return loss_func(outputs, y), metric(outputs, y)
 
 
-def test_step(batch, net, loss_function, device=None):
-    """ 測試一個 batch
-    將資料使用 Tensor.to 送到 GPU 以進行加速
-    """
-    x, y = batch
-    x = x.to(device)
-    y = y.to(device)
-    outputs = net(x)
-    loss = loss_function(outputs, y)
-    return loss.detach(), metric(outputs, y)
-
-
 def evaluate(net, data_loader, loss_function, device):
     """ 對整個網路進行 validation set 的準確度判定 """
     # 將網路透過 .eval() 轉換成 evaluation 模式, 這會影響到 dropout 和 batch normalization 等層的行為
     net.eval()
     # 遍歷整個 data_loader, 並將每個 batch 透過 test_step 進行測試
-    loss_list, accu_list = [], []
+    loss_total, accu_total = 0, 0
     for batch in data_loader:
-        loss_batch, accu_batch = test_step(batch, net, loss_function, device)
-        loss_list.append(loss_batch)
-        accu_list.append(accu_batch)
+        # 使用 torch.no_grad 來避免在測試時進行反向傳播等梯度相關的計算
+        with torch.no_grad():
+            loss_batch, accu_batch = compute_loss_and_accuracy(batch, net, loss_function, device)
+            loss_total += loss_batch.item()
+            accu_total += accu_batch.item()
 
-    loss = torch.tensor(loss_list).mean()
-    accu = torch.tensor(accu_list).mean()
+    loss = loss_total / len(data_loader)
+    accu = accu_total / len(data_loader)
     return loss, accu
 
 
@@ -131,7 +124,7 @@ def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.
     loss_func = nn.CrossEntropyLoss()
     for epoch in range(epochs):
         # 紀錄每個 epoch 的 loss 和 accuracy
-        train_loss = 0
+        loss_train = 0
         train_accu_total = 0
         # 將網路用 .train() 方法將其設定為訓練模式
         net.train()
@@ -146,20 +139,20 @@ def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.
             # 使用 .zero_grad() 將梯度歸零, 避免累加
             optimizer.zero_grad()
             # 紀錄 loss 和 accuracy, .item() 方法可以將 tensor 從 GPU 中取出, 並轉成 python 的數值
-            train_loss += loss.item()
+            loss_train += loss.item()
             train_accu_total += accu_train.item()
         # 訓練完一個 epoch 後, 計算 validation set 的 loss 和 accuracy
         loss_val, accu_val = evaluate(net, val_loader, loss_func, device)
 
         if epoch % 10 == 0:
             # 每 10 個 epoch 就印出一次訓練和測試的 loss
-            print(f'[{epoch}/{epochs}] Training loss: {train_loss}, validation loss: {loss_val.sum()}')
+            print(f'[{epoch}/{epochs}] Training loss: {loss_train}, validation loss: {loss_val}')
 
         # tensorboard 相關紀錄
-        writer.add_scalar('loss/training', train_loss / len(train_loader), epoch)
-        writer.add_scalar('loss/validation', loss_val, epoch)
-        writer.add_scalar('accu/training', train_accu_total / len(train_loader), epoch)
-        writer.add_scalar('accu/validation', accu_val, epoch)
+        writer.add_scalar('loss/train', loss_train / len(train_loader), epoch)
+        writer.add_scalar('loss/valid', loss_val, epoch)
+        writer.add_scalar('accu/train', train_accu_total / len(train_loader), epoch)
+        writer.add_scalar('accu/valid', accu_val, epoch)
         # 將網路的參數用 histogram 方法紀錄到 tensorboard 中
         for index, t in enumerate(net.parameters()):
             writer.add_histogram(f'v/{index:02d}', t, epoch)
@@ -224,8 +217,8 @@ def main():
     os.makedirs(model_dir, exist_ok=True)
 
     # 定義訓練的超參數
-    epochs = 200
-    lr = 3e-4
+    epochs = 50
+    lr = 1e-3
 
     # 定義要訓練的模型和相關參數
     model_seq = zip(
@@ -242,7 +235,8 @@ def main():
         loader_train = trainloader if not aug else trainloader_aug
         # 開始訓練
         fit(epochs, lr, model, loader_train, validloader, writer, device=device)
-        # 在 tensorboard 中加入模型的結構
+        # 在 tensorboard 中加入模型的結構 (需先將模型轉換成 evaluation 模式)
+        model.eval()
         writer.add_graph(model, torch.rand_like(images, device=device))
         # 關閉 tensorboard writer
         writer.close()
