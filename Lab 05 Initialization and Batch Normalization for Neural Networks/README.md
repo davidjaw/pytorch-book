@@ -6,3 +6,4 @@ This Lab illustrates the construction and utilization of a convolutional neural 
 ## Core concepts
 * Dynamic Weight Initialization: Applying different weight initialization schemes such as Xavier and He initializations through `torch.nn.init`.
 * Batch Normalization: Dynamic incorporation of `nn.BatchNorm2d()` via boolean flags to study its effect on model convergence.
+

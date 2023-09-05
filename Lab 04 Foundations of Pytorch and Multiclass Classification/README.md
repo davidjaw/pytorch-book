@@ -1,6 +1,6 @@
-# Ch04 Classification Problem
+# Lab 4: Foundations of Pytorch and Multiclass Classification
 
-## Lab4-1 
+## Lab 4-1
 This lab contains Python implementations that are examples of various operations commonly employed in the realm of Convolutional Neural Networks (CNNs). 
 Built on the PyTorch framework, the code samples include creating a basic convolutional network, applying convolution with a fixed kernel, and performing image augmentation.
 ### ex1_build_convolution_net
@@ -47,9 +47,9 @@ This lab explores the nuances between Fully Connected Networks and Convolutional
 ![](https://i.imgur.com/zXN466A.png)
 
 #### Core Concepts
-* TensorBoard Visualization
-* Data Augmentation
-* Training Pipeline
-* Convolutional Neural Networks
-* Fully Connected Networks
-* Performance Metrics
+* Fully Connected Networks (FCN): Implement a rudimentary FCN to grasp its architectural intricacies.
+* Convolutional Neural Networks (CNN): Construct a foundational CNN model, delving into spatial hierarchies and filter operations.
+* Data Augmentation Techniques: Quantitatively analyze the impact of data augmentation on model performance metrics, namely loss and accuracy.
+* PyTorch Training Pipeline: Acquire a comprehensive understanding of the end-to-end training pipeline within the PyTorch framework.
+* Custom Performance Metrics: Develop and integrate a customized evaluation metric function for enhanced model assessment.
+* TensorBoard Visualization: Utilize TensorBoard for real-time tracking of performance indicators, such as loss, accuracy, and parameter histograms.

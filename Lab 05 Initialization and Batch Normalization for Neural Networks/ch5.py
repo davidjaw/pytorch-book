@@ -115,7 +115,7 @@ def main():
     valid_indices = indices[int(d_len * .7):]
     # 使用 Subset 來建立 training set 和 validation set, 並使用 DataLoader 來建立 dataloader
     train_subset = torch.utils.data.Subset(dataset_aug, train_indices)
-    valid_subset = torch.utils.data.Subset(dataset_aug, valid_indices)
+    valid_subset = torch.utils.data.Subset(dataset, valid_indices)
     loader_train = DataLoader(train_subset, batch_size=batch_size,
                               shuffle=True, num_workers=cpu_num, pin_memory=True)
     loader_valid = DataLoader(valid_subset, batch_size=batch_size, shuffle=False,
