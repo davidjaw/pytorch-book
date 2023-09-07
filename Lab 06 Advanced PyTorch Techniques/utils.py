@@ -132,7 +132,7 @@ def image_transform_loader(img_size, with_aug=False, p=.5, flip_h=False, flip_v=
             transform_list += [T.CenterCrop(size=img_size)]
         if rotate:
             transform_list += [T.RandomRotation(degrees=5)]
-    transform_list += [T.Resize(size=img_size)]
+    transform_list += [T.Resize(size=img_size, antialias=True)]
     transform_list += [T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
     return T.Compose(transform_list)
 
