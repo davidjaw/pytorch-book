@@ -209,7 +209,8 @@ class AdvanceWrapper(ModelWrapper):
         sub_cm = cm[np.ix_(top_bottom_indices, top_bottom_indices)]
 
         # Plot Confusion Matrix for Top-N and Bottom-N classes while preserving original indices
-        figure, ax = plt.subplots(figsize=(self.class_num, self.class_num))
+        fig_size = max(self.class_num // 2, 15)
+        figure, ax = plt.subplots(figsize=(fig_size, fig_size))
         cax = ax.matshow(sub_cm, interpolation='nearest', cmap=plt.cm.Blues)
         plt.title(f'Confusion matrix for Top-{top_idx} and Bottom-{bottom_idx} Classes')
 

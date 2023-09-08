@@ -13,7 +13,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     batch_size = 128
-    cpu_num = 6 if os.cpu_count() > 6 else os.cpu_count()
+    cpu_num = 4 if os.cpu_count() > 4 else os.cpu_count()
     if os.name == 'nt':
         cpu_num = 0
 
@@ -55,7 +55,7 @@ def main():
     images, labels = next(dataiter)
     images = images.to(device)
 
-    model_dir = 'models'
+    model_dir = 'runs'
     os.makedirs(model_dir, exist_ok=True)
     weight_dir = 'weights'
     os.makedirs(weight_dir, exist_ok=True)
@@ -67,8 +67,8 @@ def main():
         (model_conv, model_custom)   # 模型
     )
     for model_name, model in model_seq:
-        if model_name != 'CustomModel':
-            continue
+        # if model_name != 'CustomModel':
+        #     continue
         writer = SummaryWriter(os.path.join(model_dir, model_name))
         # 向前傳遞一次, 讓模型權重初始化
         model(images)
