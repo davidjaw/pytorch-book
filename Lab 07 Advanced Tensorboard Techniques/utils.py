@@ -209,7 +209,7 @@ class AdvanceWrapper(ModelWrapper):
         sub_cm = cm[np.ix_(top_bottom_indices, top_bottom_indices)]
 
         # Plot Confusion Matrix for Top-N and Bottom-N classes while preserving original indices
-        figure, ax = plt.subplots(figsize=(10, 10))
+        figure, ax = plt.subplots(figsize=(self.class_num, self.class_num))
         cax = ax.matshow(sub_cm, interpolation='nearest', cmap=plt.cm.Blues)
         plt.title(f'Confusion matrix for Top-{top_idx} and Bottom-{bottom_idx} Classes')
 
@@ -247,7 +247,8 @@ class AdvanceWrapper(ModelWrapper):
         fig = plt.figure()
         lw = 2  # Line width
 
-        colors = cycle(['aqua', 'darkorange', 'cornflowerblue'])
+        colors = cycle(['aqua', 'darkorange', 'cornflowerblue', 'red', 'green', 'yellow', 'purple', 'pink', 'brown',
+                        'gray', 'olive', 'cyan', 'lime', 'teal', 'tan', 'lavender', 'lightblue', 'gold', 'darkgreen',])
         for i, color in zip(range(self.class_num), colors):
             plt.plot(fpr[i], tpr[i], color=color, lw=lw,
                      label='ROC curve of class {0} (area = {1:0.2f})'.format(i, roc_auc[i]))
