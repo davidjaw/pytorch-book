@@ -80,8 +80,8 @@ class OxfordPetsDataset(Dataset):
         return info
 
     def denorm(self, t):
-        mean = torch.tensor(self.norm_mean).unsqueeze(1).unsqueeze(2)
-        std = torch.tensor(self.norm_std).unsqueeze(1).unsqueeze(2)
+        mean = torch.tensor(self.norm_mean).unsqueeze(1).unsqueeze(2).to(t.device)
+        std = torch.tensor(self.norm_std).unsqueeze(1).unsqueeze(2).to(t.device)
         return t * std + mean
 
 

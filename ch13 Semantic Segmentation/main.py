@@ -6,82 +6,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from data_loader import OxfordPetsDataset, JointTransform, map_trimap
-
-
-class SegNet(nn.Module):
-    def __init__(self, num_class):
-        super(SegNet, self).__init__()
-
-        self.encoder = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-        )
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2, padding=0),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2, padding=0),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2, padding=0),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2, padding=0),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.Conv2d(32, num_class, kernel_size=3, stride=1, padding=1),
-        )
-
-    def forward(self, x):
-        feature_enc = self.encoder(x)
-        dec_out = self.decoder(feature_enc)
-        return dec_out
-
-
-class SegUNet(SegNet):
-    def __init__(self, num_class):
-        super(SegUNet, self).__init__(num_class)
-
-    def forward(self, x):
-        # encoder part
-        x1 = self.encoder[:6](x)
-        x2 = self.encoder[6:13](x1)
-        x3 = self.encoder[13:20](x2)
-        x = self.encoder[20:](x3)
-        # decoder part
-        x = self.decoder[:3](x)
-        x = x + x3
-        x = self.decoder[3:6](x)
-        x = x + x2
-        x = self.decoder[6:9](x)
-        x = x + x1
-        x = self.decoder[9:](x)
-        return x
+from network import SegNet, SegUNet, SegMobileUNet
 
 
 def train(model, dataloader, criterion, optimizer, write_img=True, denorm_func=None, device=None):
@@ -153,27 +78,39 @@ if __name__ == '__main__':
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, shuffle=True)
     denorm_func = train_dataset.denorm
 
-    model = SegNet(3).to(device)
-    # model = SegUNet(3).to(device)
-    train_loss = []
-    val_loss = []
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    writer = SummaryWriter()
+    model_segnet = SegNet(3)
+    model_segUnet = SegUNet(3)
+    model_segMobileUnet = SegMobileUNet(3)
+    model_seq = zip(
+        ['SegNet', 'SegUNet', 'SegMobileUNet'],
+        [model_segnet, model_segUnet, model_segMobileUnet]
+    )
+    for model_name, model in model_seq:
+        if model_name != 'SegMobileUNet':
+            continue
 
-    for epoch in range(num_epochs):
-        epoch_train_loss, debug_img = train(model, train_loader, criterion, optimizer, True, denorm_func, device)
-        epoch_val_loss = validate(model, valid_loader, criterion, device)
-        train_loss.append(epoch_train_loss)
-        val_loss.append(epoch_val_loss)
-        print(f"Epoch {epoch + 1} - Training Loss: {epoch_train_loss:.4f}, Validation Loss: {epoch_val_loss:.4f}")
+        print(f"Training {model_name}")
+        model.to(device)
 
-        if epoch % 5 == 0:
-            # Record histogram of weights
-            for name, param in model.named_parameters():
-                if param.requires_grad and "bias" not in name:
-                    writer.add_histogram(name, param, epoch)
-        writer.add_image('debug_image', debug_img, epoch)
-        writer.add_scalar('train/loss', epoch_train_loss, epoch)
-        writer.add_scalar('valid/loss', epoch_train_loss, epoch)
+        train_loss = []
+        val_loss = []
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        writer = SummaryWriter(f'runs/{model_name}')
+
+        for epoch in range(num_epochs):
+            epoch_train_loss, debug_img = train(model, train_loader, criterion, optimizer, True, denorm_func, device)
+            epoch_val_loss = validate(model, valid_loader, criterion, device)
+            train_loss.append(epoch_train_loss)
+            val_loss.append(epoch_val_loss)
+            print(f"Epoch {epoch + 1} - Training Loss: {epoch_train_loss:.4f}, Validation Loss: {epoch_val_loss:.4f}")
+
+            if epoch % 5 == 0:
+                # Record histogram of weights
+                for name, param in model.named_parameters():
+                    if param.requires_grad and "bias" not in name:
+                        writer.add_histogram(name, param, epoch)
+            writer.add_image('debug_image', debug_img, epoch)
+            writer.add_scalar('train/loss', epoch_train_loss, epoch)
+            writer.add_scalar('valid/loss', epoch_train_loss, epoch)
 
