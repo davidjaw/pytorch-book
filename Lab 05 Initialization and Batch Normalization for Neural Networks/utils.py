@@ -1,5 +1,35 @@
 import torch
 import torch.nn as nn
+from torchvision import transforms as T
+
+
+def image_transform_loader(img_size, with_aug=False, p=.5, flip_h=True, flip_v=False,
+                           color=False, contrast=False, sharpness=False, crop_rand=False,
+                           crop_center=False, blur=False, rotate=False):
+    transform_list = [T.ToTensor()]
+    if with_aug:
+        if flip_h:
+            transform_list += [T.RandomHorizontalFlip(p)]
+        if flip_v:
+            transform_list += [T.RandomVerticalFlip(p)]
+        if color:
+            transform_list += [T.ColorJitter(brightness=.5, hue=.3)]
+        if contrast:
+            transform_list += [T.RandomAutocontrast(p)]
+        if sharpness:
+            transform_list += [T.RandomAdjustSharpness(sharpness_factor=2, p=p)]
+        if blur:
+            transform_list += [T.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5))]
+        if crop_rand:
+            to_size = int(img_size * .8)
+            transform_list += [T.RandomCrop(size=(to_size, to_size))]
+        if crop_center:
+            transform_list += [T.CenterCrop(size=img_size)]
+        if rotate:
+            transform_list += [T.RandomRotation(degrees=5)]
+    transform_list += [T.Resize(size=img_size)]
+    transform_list += [T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+    return T.Compose(transform_list)
 
 
 def metric(x, y):
@@ -76,5 +106,6 @@ def fit(epochs, lr, net, train_loader, val_loader, writer, opt_func=torch.optim.
         writer.add_scalar('accu/train', train_accu_total / len(train_loader), epoch)
         writer.add_scalar('accu/valid', accu_val, epoch)
         # 將網路的參數用 histogram 方法紀錄到 tensorboard 中
-        for index, t in enumerate(net.parameters()):
-            writer.add_histogram(f'v/{index:02d}', t, epoch)
+        for index, t in enumerate(net.named_parameters()):
+            name, param = t
+            writer.add_histogram(name, param, epoch)

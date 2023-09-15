@@ -1,91 +1,11 @@
 import numpy as np
+import torch
 from torch.utils.data import DataLoader
 import torchvision
-from torchvision import transforms as T
 from torch.utils.tensorboard import SummaryWriter
-from utils_classification import *
+from utils import image_transform_loader, fit
+from network import ConvNet, init_weights
 import os
-
-
-class ConvNet(nn.Module):
-    """ 卷積神經網路, 可以選擇是否使用 batch normalization """
-    def __init__(self, use_bn=False):
-        super().__init__()
-        # 使用 use_bn 來決定是否使用 batch normalization, 若否, nn.Identity() 會將輸入直接輸出
-        place_holder = lambda x: nn.BatchNorm2d(x) if use_bn else nn.Identity()
-        place_holder_1d = lambda x: nn.BatchNorm1d(x) if use_bn else nn.Identity()
-        self.layers = nn.ModuleList([
-            nn.Conv2d(3, 64, (3, 3)),
-            place_holder(64),
-            nn.ReLU(),
-            nn.MaxPool2d((2, 2), (2, 2)),
-            nn.Conv2d(64, 128, (3, 3)),
-            place_holder(128),
-            nn.ReLU(),
-            nn.Conv2d(128, 256, (3, 3)),
-            place_holder(256),
-            nn.ReLU(),
-            nn.Conv2d(256, 128, (3, 3)),
-            place_holder(128),
-            nn.ReLU(),
-            nn.Conv2d(128, 64, (3, 3)),
-            place_holder(64),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(64 * 5 * 5, 64),
-            place_holder_1d(64),
-            nn.ReLU(),
-            nn.Dropout(.5),
-            nn.Linear(64, 10, bias=False),
-        ])
-
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
-
-
-# define initialization
-def init_weights(method='xavier'):
-    def init(m):
-        if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-            if method == 'xavier':
-                torch.nn.init.xavier_normal_(m.weight)
-            elif method == 'he':
-                torch.nn.init.kaiming_normal_(m.weight)
-            elif method == 'noraml':
-                torch.nn.init.normal_(m.weight, std=1)
-
-    return init
-
-
-def image_transform_loader(img_size, with_aug=False, p=.5, flip_h=True, flip_v=False,
-                           color=False, contrast=False, sharpness=False, crop_rand=False,
-                           crop_center=False, blur=False, rotate=False):
-    transform_list = [T.ToTensor()]
-    if with_aug:
-        if flip_h:
-            transform_list += [T.RandomHorizontalFlip(p)]
-        if flip_v:
-            transform_list += [T.RandomVerticalFlip(p)]
-        if color:
-            transform_list += [T.ColorJitter(brightness=.5, hue=.3)]
-        if contrast:
-            transform_list += [T.RandomAutocontrast(p)]
-        if sharpness:
-            transform_list += [T.RandomAdjustSharpness(sharpness_factor=2, p=p)]
-        if blur:
-            transform_list += [T.GaussianBlur(kernel_size=(5, 9), sigma=(0.1, 5))]
-        if crop_rand:
-            to_size = int(img_size * .8)
-            transform_list += [T.RandomCrop(size=(to_size, to_size))]
-        if crop_center:
-            transform_list += [T.CenterCrop(size=img_size)]
-        if rotate:
-            transform_list += [T.RandomRotation(degrees=5)]
-    transform_list += [T.Resize(size=img_size)]
-    transform_list += [T.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-    return T.Compose(transform_list)
 
 
 def main():

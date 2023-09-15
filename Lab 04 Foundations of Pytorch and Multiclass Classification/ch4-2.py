@@ -13,7 +13,7 @@ class FullyConnectedModel(nn.Module):
     """" 全連接網路架構 """
     def __init__(self, dropout_prob=0.3):
         super().__init__()
-        self.flatten = torch.flatten
+        self.flatten = nn.Flatten()
         # 使用 nn.Linear 定義線性層，並將其加入 ModuleList 中
         self.dense = nn.ModuleList([
             nn.Linear(32 * 32 * 3, 128, bias=True),
@@ -26,7 +26,7 @@ class FullyConnectedModel(nn.Module):
             nn.Linear(64, 10, bias=False),  # 最後一層不使用 bias
         ])
         # 定義激活函數和 dropout
-        self.relu = F.relu
+        self.relu = nn.ReLU()
         # 定義 dropout
         self.dropouts = nn.ModuleList([
             nn.Dropout(dropout_prob) for _ in range(len(self.dense) - 1)
@@ -34,7 +34,7 @@ class FullyConnectedModel(nn.Module):
 
     def forward(self, x):
         # 全連接網路會將圖片攤平成一維向量，因此需要使用 flatten
-        x = self.flatten(x, 1)
+        x = self.flatten(x)
         # 使用 for 迴圈將線性層和激活函數進行連接
         for i in range(len(self.dense) - 1):
             x = self.dense[i](x)
@@ -49,7 +49,7 @@ class ConvolutionalModel(nn.Module):
     """ 卷積神經網路 """
     def __init__(self):
         super().__init__()
-        self.flatten = torch.flatten
+        self.flatten = nn.Flatten()
         # 這次使用 nn.Lazy 系列的函數，主要差別僅在於不需要指定輸入的 channel 數量
         self.convs = nn.ModuleList([
             nn.LazyConv2d(64, (3, 3),  padding=1, bias=True),
@@ -62,7 +62,7 @@ class ConvolutionalModel(nn.Module):
         # 定義線性層, 此處也使用 nn.LazyLinear 來定義
         self.dense = nn.LazyLinear(64, bias=True)
         self.output_layer = nn.LazyLinear(10, bias=False)
-        self.relu = F.relu
+        self.relu = nn.ReLU()
         self.pool = F.max_pool2d
 
     def forward(self, x):
@@ -74,7 +74,7 @@ class ConvolutionalModel(nn.Module):
                 # 第一層卷積層的輸出使用 max pooling
                 x = self.pool(x, 3, 2)
         # 將輸出攤平成一維向量, 並使用線性層進行轉換
-        x = self.flatten(x, 1)
+        x = self.flatten(x)
         x = self.dense(x)
         x = self.output_layer(x)
         return x
@@ -164,8 +164,8 @@ def main():
     # 定義 dataloader 的 cpu 數量
     cpu_num = 4 if os.cpu_count() > 4 else os.cpu_count()
     if os.name == 'nt':
-        # Windows 系統的 dataloader 配合大於 0 的 cpu_num 可能會變很慢,
-        # 因此這邊判斷作業系統, 若為 windows 則將 cpu 數量設為 0
+        # Windows 系統的 dataloader 使用大於 0 的 cpu_num 時可能會變很慢,
+        # 因此這邊用 os.name 判斷作業系統, 若為 windows 則將 cpu 數量設為 0
         cpu_num = 0
 
     # 定義未使用 image augmentation 的 dataset 相關參數
@@ -189,8 +189,8 @@ def main():
     model_fc = FullyConnectedModel().to(device)
     model_cnn = ConvolutionalModel().to(device)
 
-    summary(model_fc, input_data=images[:1])
-    summary(model_cnn, input_data=images[:1])
+    summary(model_fc, input_data=images)
+    summary(model_cnn, input_data=images)
 
     model_fc_aug = FullyConnectedModel().to(device)
     model_cnn_aug = ConvolutionalModel().to(device)
