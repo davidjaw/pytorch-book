@@ -13,8 +13,9 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     batch_size = 128
-    cpu_num = 6 if os.cpu_count() > 6 else os.cpu_count()
-    if os.name == 'nt':
+    cpu_num = 3 if os.cpu_count() > 3 else os.cpu_count()
+    chk_os = False
+    if chk_os and os.name == 'nt':
         cpu_num = 0
 
     img_size = 64
@@ -22,7 +23,7 @@ def main():
     transform_aug = image_transform_loader(img_size, with_aug=True, rotate=True, flip_h=True, contrast=True,
                                            sharpness=True)
 
-    target_dataset = 1  # 0: CIFAR100, 1: CIFAR10
+    target_dataset = 0  # 0: CIFAR100, 1: CIFAR10
     if target_dataset == 0:
         dataset = torchvision.datasets.CIFAR100(root='./data', train=True, transform=transform, download=True)
         dataset_aug = torchvision.datasets.CIFAR100(root='./data', train=True, transform=transform_aug, download=True)
@@ -49,7 +50,7 @@ def main():
     loader_train = DataLoader(train_subset, batch_size=batch_size,
                               shuffle=True, num_workers=cpu_num, pin_memory=True)
     loader_valid = DataLoader(valid_subset, batch_size=batch_size, shuffle=False,
-                              num_workers=cpu_num, pin_memory=True)
+                              num_workers=0, pin_memory=True)
     # 將一組 batch 的資料取出, 等待之後 tensorboard 進行網路架構視覺化使用
     dataiter = iter(loader_train)
     images, labels = next(dataiter)
