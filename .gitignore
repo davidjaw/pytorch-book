@@ -6,6 +6,6 @@ model**
 log*
 runs*
 cache*
-weights*
+weight*
 .vector_cache
 __pycache__
