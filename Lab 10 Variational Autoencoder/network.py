@@ -73,3 +73,15 @@ class VAE(nn.Module):
         z = self.reparameterize(mu, log_var)
         x_hat = self.decoder(z)
         return x_hat, mu, log_var
+
+
+if __name__ == '__main__':
+    from torchinfo import summary
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # encoder = Encoder(z_dim=2)
+    # summary(encoder, input_size=(1, 1, 28, 28))
+
+    decoder = Decoder(z_dim=2)
+    summary(decoder, input_size=(1, 2))
+
+

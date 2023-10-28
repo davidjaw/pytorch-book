@@ -1,6 +1,7 @@
 import torch
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.utils import make_grid
+import torch.nn.functional as F
 import numpy as np
 import torch.nn as nn
 from network import VAE
@@ -8,6 +9,14 @@ from network import VAE
 
 def denorm(x, mean=0.1307, std=0.3081):
     return x * std + mean
+
+
+def reconstruction_loss(generated_img, target_img):
+    return F.binary_cross_entropy_with_logits(generated_img, target_img, reduction='sum')
+
+
+def kl_divergence(mu, log_var):
+    return -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
 
 
 class TensorBoardCallback:

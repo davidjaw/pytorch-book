@@ -80,7 +80,7 @@ class SegUNet(SegNet):
 class SegMobileUNet(nn.Module):
     def __init__(self, num_class):
         super(SegMobileUNet, self).__init__()
-        self.mobile_net = torch.hub.load('pytorch/vision:v0.10.0', 'mobilenet_v2', pretrained=True)
+        self.mobile_net = torch.hub.load('pytorch/vision:v0.10.0', 'mobilenet_v2', weights='IMAGENET1K_V1')
         self.decoder = nn.Sequential(
             nn.Sequential(
                 nn.ConvTranspose2d(1280, 96, kernel_size=2, stride=2, padding=0),
@@ -98,20 +98,20 @@ class SegMobileUNet(nn.Module):
                 nn.ReLU(),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(24, 16, kernel_size=2, stride=2, padding=0),
-                nn.BatchNorm2d(16),
+                nn.ConvTranspose2d(24, 32, kernel_size=2, stride=2, padding=0),
+                nn.BatchNorm2d(32),
                 nn.ReLU(),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(16, 16, kernel_size=2, stride=2, padding=0),
-                nn.BatchNorm2d(16),
+                nn.ConvTranspose2d(32, 32, kernel_size=2, stride=2, padding=0),
+                nn.BatchNorm2d(32),
                 nn.ReLU(),
-                nn.Conv2d(16, num_class, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(32, num_class, kernel_size=3, stride=1, padding=1),
             )
         )
 
         self.hooks = []
-        target_layer_idx = [1, 3, 6, 13]
+        target_layer_idx = [0, 3, 6, 13]
         self.intermidiates = [None for _ in range(len(target_layer_idx))]
         for i in range(len(target_layer_idx)):
             layer_idx = target_layer_idx[i]
@@ -141,8 +141,6 @@ class SegMobileUNet(nn.Module):
 if __name__ == '__main__':
     from torchinfo import summary
     net = SegMobileUNet(3)
-    net(torch.randn(1, 3, 64, 64))
-    print(net.mobile_net)
     summary(net, (1, 3, 64, 64))
 
 

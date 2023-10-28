@@ -1,23 +1,27 @@
 import torch
 from data_loader import CatDogDataset
 from tqdm import tqdm
+from torchinfo import summary
 
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    img_size = 299
     # 設定資料集路徑, 需要手動下載資料集並解壓縮到指定路徑
     # 資料集網址：https://www.kaggle.com/competitions/dogs-vs-cats/data
     dataset_path = 'G:\\dataset\\dogs-vs-cats\\train'
-    cat_dog_dataset = CatDogDataset(dataset_path, img_size=299)
+    cat_dog_dataset = CatDogDataset(dataset_path, img_size=img_size)
     # Windows 環境下使用 num_workers > 0 可能會有問題, 若程式非常緩慢或是無法執行, 請將 num_workers 設為 0
-    train_loader, valid_loader = cat_dog_dataset.get_dataloader(num_workers=8)
+    train_loader, valid_loader = cat_dog_dataset.get_dataloader(num_workers=4)
 
     for with_pretrained in [True, False]:
         # 從 torch hub 載入模型
         weights = 'IMAGENET1K_V1' if with_pretrained else None
         model = torch.hub.load('pytorch/vision', 'mobilenet_v3_large', weights=weights)
-        # print(model)  # 可以印出模型的架構
+        # 首次執行時顯示模型資訊
+        if with_pretrained:
+            summary(model, input_size=(1, 3, img_size, img_size), device=device)
 
         # 由於我們的資料級類別已經包含在 imagenet 資料集中,
         # 在載入預訓練權重時, 我們可以不額外訓練中間的層數就達到不錯的效果

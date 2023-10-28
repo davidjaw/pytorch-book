@@ -1,12 +1,11 @@
 import os
 import torch
-import torch.nn.functional as F
 import torchvision
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 from network import VAE
-from utils import denorm, TensorBoardCallback
+from utils import denorm, TensorBoardCallback, reconstruction_loss, kl_divergence
 
 
 def main():
@@ -46,7 +45,7 @@ def main():
             tqdm_loader_train.set_postfix({'r_loss': loss_r, 'kl_loss': loss_kl})
 
         # 定義變數來暫存訓練時的資訊給 tensorboard callback 使用
-        images, reconstruction_loss, kl_divergence = None, None, None
+        images, batch_reconstruct, batch_kl = None, None, None
         for i, (images, _) in enumerate(tqdm_loader_train):
             # 模型訓練
             model.train()
@@ -56,19 +55,19 @@ def main():
             # 對還原後的影像進行 loss 計算時, 需先將目標影像 denormalize
             img_label = denorm(images)
             # 重構方面的 loss 使用 binary cross entropy
-            reconstruction_loss = F.binary_cross_entropy_with_logits(x_hat, img_label, reduction='sum')
+            batch_reconstruct = reconstruction_loss(x_hat, img_label)
             # 定義 KL Divergence loss
-            kl_divergence = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+            batch_kl = kl_divergence(mu, log_var)
             # 透過兩個 loss 的加權總和來進行反向傳播
-            loss = reconstruction_loss + kl_divergence
+            loss = batch_reconstruct + batch_kl
             loss.backward()
             optimizer.step()
 
         if epoch % 10 == 0:
             # 每 10 個 epoch 就將訓練時的資訊送入 tensorboard 進行視覺化
-            callback(model, images, None, [reconstruction_loss, kl_divergence], epoch)
-            loss_r = reconstruction_loss.item()
-            loss_kl = kl_divergence.item()
+            callback(model, images, None, [batch_reconstruct, batch_kl], epoch)
+            loss_r = batch_reconstruct.item()
+            loss_kl = batch_kl.item()
 
 
 if __name__ == '__main__':
