@@ -2,6 +2,75 @@ import torch
 from torch import nn
 
 
+class ConvBlock(nn.Module):
+    def __init__(self, in_c, out_c, use_residual=True, groups=2):
+        super(ConvBlock, self).__init__()
+        self.use_residual = use_residual
+        self.p1 = nn.Sequential(
+            nn.Conv2d(in_c, out_c // 2, 1, 1, groups=groups),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.p2 = nn.Sequential(
+            nn.Conv2d(in_c, out_c // 2, 1, 1, groups=groups),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.pw = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(out_c // 2, out_c // 2, 3, 1, 1, groups=out_c // 2),
+                nn.Conv2d(out_c // 2, out_c // 2, 3, 1, 1, groups=groups),
+                nn.LeakyReLU(0.2, inplace=True),
+            ) for _ in range(2)
+        ])
+        self.merge = nn.Sequential(
+            nn.Conv2d(out_c * 2, out_c // 2, 1, 1, groups=groups),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(out_c // 2, out_c, 1, 1),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        if use_residual and in_c != out_c:
+            self.residual = nn.Sequential(
+                nn.Conv2d(in_c, out_c, 1, 1),
+                nn.LeakyReLU(0.2, inplace=True),
+            )
+        else:
+            self.residual = nn.Identity()
+
+    def forward(self, x):
+        residual = self.residual(x)
+        x1 = self.p1(x)
+        x2 = self.p2(x)
+        x3 = self.pw[0](x2)
+        x4 = self.pw[1](x3)
+        x = torch.cat([x1, x2, x3, x4], dim=1)
+        x = self.merge(x)
+        if self.use_residual:
+            x = x + residual
+        return x
+
+
+class UpscaleBlock(nn.Module):
+    def __init__(self, in_c, out_c):
+        super(UpscaleBlock, self).__init__()
+        self.upscale = nn.Sequential(
+            nn.ConvTranspose2d(in_c, out_c // 2, 4, 2, 1),
+            nn.BatchNorm2d(out_c // 2),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+        self.conv = nn.Sequential(
+            nn.Conv2d(out_c // 2, out_c // 2, 3, 1, 1),
+            nn.BatchNorm2d(out_c // 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(out_c // 2, out_c, 1, 1),
+            nn.BatchNorm2d(out_c),
+            nn.LeakyReLU(0.2, inplace=True),
+        )
+
+    def forward(self, x):
+        x = self.upscale(x)
+        x = self.conv(x)
+        return x
+
+
 class Generator(nn.Module):
     def __init__(self, z_dim=100, c_dim=1):
         super(Generator, self).__init__()
@@ -14,33 +83,20 @@ class Generator(nn.Module):
         )
         self.decoder = nn.Sequential(
             nn.Sequential(
-                nn.ConvTranspose2d(self.dim, 512, 4, 2, 1),
-                nn.BatchNorm2d(512),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(512, 512, 3, 1, 1),
-                nn.BatchNorm2d(512),
-                nn.LeakyReLU(0.2, inplace=True),
+                UpscaleBlock(self.dim, 512),
+                ConvBlock(512, 512),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(512, 256, 4, 2, 1),
-                nn.BatchNorm2d(256),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(256, 256, 3, 1, 1),
-                nn.BatchNorm2d(256),
-                nn.LeakyReLU(0.2, inplace=True),
+                UpscaleBlock(512, 256),
+                ConvBlock(256, 256),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(256, 128, 4, 2, 1),
-                nn.BatchNorm2d(128),
-                nn.LeakyReLU(0.2, inplace=True),
-                nn.Conv2d(128, 128, 3, 1, 1),
-                nn.BatchNorm2d(128),
-                nn.LeakyReLU(0.2, inplace=True),
+                UpscaleBlock(256, 128),
+                ConvBlock(128, 128),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(128, 64, 4, 2, 1),
-                nn.BatchNorm2d(64),
-                nn.LeakyReLU(0.2, inplace=True),
+                UpscaleBlock(128, 64),
+                ConvBlock(64, 64),
             ),
             nn.Sequential(
                 nn.Conv2d(64, 3, 3, 1, 1),
@@ -63,19 +119,19 @@ class Discriminator(nn.Module):
         self.c_dim = c_dim
 
         self.feature_extractor = nn.Sequential(
-            nn.Conv2d(3, 64, 4, 2, 1, bias=False),
+            nn.Conv2d(3, 64, 5, 2, 2, bias=False),
             nn.BatchNorm2d(64),
             nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Conv2d(64, 128, 4, 2, 1, bias=False),
+            nn.Conv2d(64, 128, 5, 2, 2, bias=False),
             nn.BatchNorm2d(128),
             nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Conv2d(128, 256, 4, 2, 1, bias=False),
+            nn.Conv2d(128, 256, 5, 2, 2, bias=False),
             nn.BatchNorm2d(256),
             nn.LeakyReLU(0.2, inplace=True),
 
-            nn.Conv2d(256, 512, 4, 2, 1, bias=False),
+            nn.Conv2d(256, 512, 5, 2, 2, bias=False),
             nn.BatchNorm2d(512),
             nn.LeakyReLU(0.2, inplace=True),
         )

@@ -41,17 +41,18 @@ def main():
     c_dim = len(dataset.categories)
     generator = Generator(z_dim=z_dim, c_dim=c_dim).to(device)
     discriminator = Discriminator(c_dim=c_dim).to(device)
-    hinge_threshold = 100
+    hinge_threshold = 10
 
     g_optimizer = optim.SGD(generator.parameters(), lr=lr)
     d_optimizer = optim.SGD(discriminator.parameters(), lr=lr * 1.5)
+    init_cls_loss = None
     # 顯示模型訓練狀態
     post_str = ''
     for epoch in range(num_epochs):
         tqdm_loader = tqdm(dataloader, desc=f'Epoch {epoch + 1}/{num_epochs}', dynamic_ncols=True)
         if post_str != '':
             tqdm_loader.set_postfix_str(post_str)
-        g_loss, d_loss, real_img = None, None, None
+        g_loss, g_cls_loss, d_loss, real_img = None, None, None, None
         for i, (real_images, labels) in enumerate(tqdm_loader):
             real_images = real_images.to(device)
             real_img = real_images
@@ -97,11 +98,26 @@ def main():
                 d_fake, d_fake_cls = discriminator(fake_images)
                 d_fake_cls_loss = torch.nn.functional.cross_entropy(d_fake_cls, labels)
 
+                if init_cls_loss is None:
+                    init_cls_loss = d_fake_cls_loss
+
                 # 整合 generator 的損失
-                g_loss = -d_fake.mean() + d_fake_cls_loss * 10
+                g_cls_loss = d_fake_cls_loss
+                g_loss = -d_fake.mean()
+                # 強迫分類在損失函數中的重要性, 但若學習到一個階段時, 會將此權重調小
+                if init_cls_loss > d_fake_cls_loss * 2.5:
+                    scale = 0.1
+                elif g_loss > hinge_threshold:
+                    scale = g_cls_loss * torch.abs(g_loss) * 0.1
+                elif 0 < g_loss <= hinge_threshold:
+                    scale = g_cls_loss * torch.abs(g_loss)
+                else:
+                    scale = g_cls_loss * torch.abs(d_fake.min())
+
+                total_loss = g_loss + g_cls_loss * scale
 
                 generator.zero_grad()
-                g_loss.backward()
+                total_loss.backward()
                 g_optimizer.step()
 
         if epoch % 10 == 0 and epoch != 0:
@@ -115,6 +131,7 @@ def main():
             writer.add_histogram('real_hist', real_img, global_step=epoch)
             writer.add_scalar('loss/dis', d_loss.item(), epoch)
             writer.add_scalar('loss/gen', g_loss.item(), epoch)
+            writer.add_scalar('loss/gen_cls', g_cls_loss.item(), epoch)
             for name, v in generator.named_parameters():
                 writer.add_histogram(name, v, global_step=epoch)
             # 從潛空間中隨機取樣兩個向量 z1, z2, 並在它們之間進行線性插值
