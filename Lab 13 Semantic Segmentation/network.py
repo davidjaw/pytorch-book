@@ -1,3 +1,4 @@
+import os
 import torch
 import torch.nn as nn
 
@@ -126,8 +127,9 @@ class SegMobileUNet(nn.Module):
         return hook_fn
 
     def __del__(self):
-        for hook in self.hooks:
-            hook.remove()
+        if hasattr(self, 'hooks') and len(self.hooks) > 0:
+            for hook in self.hooks:
+                hook.remove()
 
     def forward(self, x):
         x = self.mobile_net.features(x)
@@ -139,8 +141,8 @@ class SegMobileUNet(nn.Module):
 
 
 if __name__ == '__main__':
-    from torchinfo import summary
     net = SegMobileUNet(3)
+    from torchinfo import summary
     summary(net, (1, 3, 64, 64))
 
 

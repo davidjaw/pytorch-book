@@ -6,8 +6,8 @@ import torch.nn.functional as F
 class ResNetBlk(nn.Module):
     def __init__(
             self,
-            in_c,
-            out_c,
+            d_i,
+            d_o,
             act=nn.ReLU,
             batch_norm=True,
             down_sample=False,
@@ -17,20 +17,20 @@ class ResNetBlk(nn.Module):
         g = 4 if group else 1
 
         self.conv1 = nn.Sequential(
-            nn.BatchNorm2d(in_c) if batch_norm else nn.Identity(),
+            nn.BatchNorm2d(d_i) if batch_norm else nn.Identity(),
             act(inplace=True),
-            nn.Conv2d(in_c, out_c // 4, kernel_size=1, stride=1, bias=False, groups=g),
+            nn.Conv2d(d_i, d_o // 4, kernel_size=1, stride=1, bias=False, groups=g),
         )
         self.conv2 = nn.Sequential(
-            nn.BatchNorm2d(out_c // 4) if batch_norm else nn.Identity(),
+            nn.BatchNorm2d(d_o // 4) if batch_norm else nn.Identity(),
             act(inplace=True),
-            nn.Conv2d(out_c // 4, out_c // 4, kernel_size=3, stride=2 if down_sample else 1, padding=1, bias=False, groups=g),
+            nn.Conv2d(d_o // 4, d_o // 4, kernel_size=3, stride=2 if down_sample else 1, padding=1, bias=False, groups=g),
         )
-        self.conv3 = nn.Conv2d(out_c // 4, out_c, kernel_size=1, stride=1, groups=g)
+        self.conv3 = nn.Conv2d(d_o // 4, d_o, kernel_size=1, stride=1, groups=g)
 
         self.identity = nn.Sequential(
             nn.MaxPool2d(2, 2) if down_sample else nn.Identity(),
-            nn.Conv2d(in_c, out_c, 1, 1, groups=g) if in_c != out_c else nn.Identity(),
+            nn.Conv2d(d_i, d_o, 1, 1, groups=g) if d_i != d_o else nn.Identity(),
         )
 
     def forward(self, x):
@@ -40,6 +40,73 @@ class ResNetBlk(nn.Module):
         x = self.conv3(x)
         x = x + identity
         return x
+
+
+class SPPF(nn.Module):
+    def __init__(self, d_i, d_o, depth=2):
+        super().__init__()
+        d_h = d_o // 2
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(d_i, d_h, 1, 1),
+            nn.BatchNorm2d(d_h),
+            nn.SiLU(),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d((depth + 1) * d_h, d_o, 3, 1, 1),
+            nn.BatchNorm2d(d_o),
+            nn.SiLU(),
+        )
+        self.m = nn.MaxPool2d(5, 1, 2)
+        self.depth = depth
+
+    def forward(self, x):
+        xs = [self.conv1(x)]
+        xs.extend(self.m(xs[-1]) for _ in range(self.depth))
+        return self.conv2(torch.cat(xs, dim=1))
+
+
+class Bottleneck(nn.Module):
+    def __init__(self, d_i, d_o, group=None):
+        super().__init__()
+        g = group if group else 1
+        d_h = d_o // 2
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(d_i, d_h, 1, 1, groups=g),
+            nn.BatchNorm2d(d_h),
+            nn.SiLU(),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(d_h, d_o, 3, 1, 1, groups=g),
+            nn.BatchNorm2d(d_o),
+            nn.SiLU(),
+        )
+        self.residual = nn.Identity() if d_i == d_o else nn.Conv2d(d_i, d_o, 1, 1, groups=g)
+
+    def forward(self, x):
+        return self.residual(x) + self.conv2(self.conv1(x))
+
+
+class C2fBlock(nn.Module):
+    def __init__(self, d_i, d_o, depth=2, group=None):
+        super().__init__()
+        g = group if group else 1
+        h_dim = d_o // 2
+        self.p1 = nn.Sequential(
+            nn.Conv2d(d_i, h_dim * 2, 1, 1, groups=g),
+            nn.BatchNorm2d(h_dim * 2),
+            nn.SiLU(),
+        )
+        self.p2 = nn.Sequential(
+            nn.Conv2d((2 + depth) * h_dim, d_o, 1, 1, groups=g),
+            nn.BatchNorm2d(d_o),
+            nn.SiLU(),
+        )
+        self.d = nn.ModuleList([Bottleneck(h_dim, h_dim, group) for _ in range(depth)])
+
+    def forward(self, x):
+        xs = list(self.p1(x).chunk(2, dim=1))
+        xs.extend(m(xs[-1]) for m in self.d)
+        return self.p2(torch.cat(xs, dim=1))
 
 
 class ConvNeXtV2Block(nn.Module):
@@ -129,7 +196,7 @@ class SegConvNextV2(nn.Module):
                     ResNetBlk(512, 512, down_sample=False, group=grouped),
                 ),
             )
-        else:
+        elif network_type == 2:
             self.encoder = nn.Sequential(
                 nn.Sequential(
                     nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
@@ -151,6 +218,32 @@ class SegConvNextV2(nn.Module):
                     nn.Conv2d(256, 512, kernel_size=1),
                     nn.MaxPool2d(2, 2),
                     LayerNorm(512, data_format='channels_first'),
+                ),
+            )
+        elif network_type >= 3:
+            group = 4 if network_type == 4 else 1
+            self.encoder = nn.Sequential(
+                nn.Sequential(
+                    nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
+                    nn.BatchNorm2d(64),
+                    nn.SiLU(),
+                    C2fBlock(64, 64, group=group),
+                ),
+                nn.Sequential(
+                    C2fBlock(64, 128, group=group),
+                    C2fBlock(128, 128, group=group),
+                    nn.MaxPool2d(2, 2),
+                ),
+                nn.Sequential(
+                    C2fBlock(128, 256, group=group),
+                    C2fBlock(256, 256, group=group),
+                    SPPF(256, 256, depth=3),
+                    nn.MaxPool2d(2, 2),
+                ),
+                nn.Sequential(
+                    C2fBlock(256, 512, group=group),
+                    C2fBlock(512, 512, group=group),
+                    nn.MaxPool2d(2, 2),
                 ),
             )
 
@@ -189,7 +282,9 @@ class SegConvNextV2(nn.Module):
 
 if __name__ == '__main__':
     from torchinfo import summary
-    network = SegConvNextV2(3, network_type=2)
-    random_in = torch.rand((32, 3, 64, 64))
-    output = network(random_in)
-    summary(network, input_size=(32, 3, 64, 64))
+    for i in range(5):
+        print(f'Network type {i}')
+        network = SegConvNextV2(3, network_type=i)
+        random_in = torch.rand((32, 3, 64, 64))
+        output = network(random_in)
+        summary(network, input_size=(32, 3, 64, 64))

@@ -6,9 +6,9 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from data_loader import OxfordPetsDataset, JointTransform, map_trimap
-from network import SegNet, SegUNet, SegMobileUNet
+from network import SegConvNextV2
 from tqdm import tqdm
-from torchinfo import summary
+import os
 
 
 def get_confusion_matrix_elements(predicted, target, class_index):
@@ -119,7 +119,8 @@ def validate(model, dataloader, criterion, device=None):
 
 
 if __name__ == '__main__':
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print('Using device:', device)
 
     batch_size = 128
     learning_rate = 0.001
@@ -129,7 +130,7 @@ if __name__ == '__main__':
     valid_transform = transforms.Resize((64, 64))
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
-        transforms.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.1)),
+        transforms.RandomAffine(degrees=(-10, 10), translate=(0.1, 0.1)),  # random shift
         transforms.Resize((64, 64)),
     ])
     train_transform_color = transforms.ColorJitter(contrast=0.2)
@@ -137,31 +138,25 @@ if __name__ == '__main__':
     valid_transform_joint = JointTransform(valid_transform)
     train_dataset = OxfordPetsDataset(dataset_path, 'trainval.txt', train_transform_joint, train_transform_color)
     valid_dataset = OxfordPetsDataset(dataset_path, 'test.txt', valid_transform_joint)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    valid_loader = DataLoader(valid_dataset, batch_size=batch_size * 2, shuffle=True)
+
+    n_workers = 3 if os.name == 'nt' else 8
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
+    valid_loader = DataLoader(valid_dataset, batch_size=int(batch_size * 1.5), shuffle=True, num_workers=n_workers)
     denorm_func = train_dataset.denorm
 
-    model_segnet = SegNet(3)
-    model_segUnet = SegUNet(3)
-    model_segMobileUnet = SegMobileUNet(3)
-    model_seq = zip(
-        ['SegNet', 'SegUNet', 'SegMobileUNet'],
-        [model_segnet, model_segUnet, model_segMobileUnet]
-    )
-    for model_name, model in model_seq:
-        print(f"Training {model_name}")
-        model.to(device)
-
+    network_names = ['ResNet', 'ResNeXt', 'ConvNeXt-v2', 'CSPNet-SPPF', 'CSPNeXt-SPPF']
+    for network_type in range(3, 5):
+        model = SegConvNextV2(3, network_type).to(device)
         train_loss = []
         val_loss = []
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-        writer = SummaryWriter(f'runs/{model_name}')
+        writer = SummaryWriter(f'runs/Seg-{network_names[network_type]}')
+        model.to(device)
 
         # Record model graph
         dummy_input = torch.rand((1, 3, 64, 64)).to(device)
         writer.add_graph(model, dummy_input)
-        summary(model, input_data=dummy_input)
 
         for epoch in range(num_epochs):
             epoch_train_loss, debug_img = train(model, train_loader, criterion, optimizer, True, denorm_func, device)
@@ -187,4 +182,3 @@ if __name__ == '__main__':
                 writer.add_scalar(f'valid/IoU-{i}', iou, epoch)
 
         writer.close()
-
