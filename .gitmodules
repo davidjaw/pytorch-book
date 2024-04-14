@@ -1,3 +1,6 @@
 [submodule "ch17/diffusion_model"]
 	path = ch17/diffusion_model
 	url = https://github.com/dome272/Diffusion-Models-pytorch.git
+[submodule "Lab 12 Object Detection"]
+	path = Lab 12 Object Detection
+	url = https://github.com/davidjaw/Domain-adaptation-object-detection-with-YOLOv8
