@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torchvision
 
 
 class SegNet(nn.Module):
@@ -83,7 +84,7 @@ class SegMobileUNet(nn.Module):
     def __init__(self, num_class):
         super(SegMobileUNet, self).__init__()
         # 載入 MobileNetV2 作為 Encoder
-        self.mobile_net = torch.hub.load('pytorch/vision:v0.10.0', 'mobilenet_v2', weights='IMAGENET1K_V1')
+        self.mobile_net = torchvision.models.mobilenet_v2(weights='IMAGENET1K_V1').features
         # 由於 mobilenet 本身的 forward 方法不會回傳中間特徵, 且其 forward 方式不一定是使用 Sequential model, 因此需要透過 hook 來取得中間特徵
         self.hooks = []
         # 設定要取得的中間特徵的 layer index
@@ -94,7 +95,7 @@ class SegMobileUNet(nn.Module):
         for i in range(len(target_layer_idx)):
             layer_idx = target_layer_idx[i]
             # 我們此處使用 register_forward_hook 來註冊 hook, 並且透過傳入 index i 的方式來共用同一個 hook function
-            hook = self.mobile_net.features[layer_idx].register_forward_hook(self.hook_intermidiate(i))
+            hook = self.mobile_net[layer_idx].register_forward_hook(self.hook_intermidiate(i))
             # 將 hook function 加入到 hooks 中, 以便之後移除
             self.hooks.append(hook)
         # Decoder 部分是由 Transpose Convolutional Layer, Batch Normalization, ReLU 組成
@@ -142,7 +143,7 @@ class SegMobileUNet(nn.Module):
 
     def forward(self, x):
         # 透過 MobileNetV2 進行 Encoder 前向運算
-        x = self.mobile_net.features(x)
+        x = self.mobile_net(x)
         # 前向運算後, 因為有 forward hook, 因此中間特徵會被儲存至 self.intermidiates 中
         for i in range(len(self.intermidiates)):
             # 透過 Decoder 進行邊解碼處理, 並透過 skip connection 來保留更多空間資訊
@@ -154,8 +155,9 @@ class SegMobileUNet(nn.Module):
 
 
 if __name__ == '__main__':
-    net = SegMobileUNet(3)
     from torchinfo import summary
-    summary(net, (1, 3, 64, 64))
+    nets = [SegMobileUNet(3), SegNet(3), SegUNet(3)]
+    for net in nets:
+        summary(net, (1, 3, 64, 64))
 
 

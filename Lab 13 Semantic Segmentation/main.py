@@ -10,6 +10,9 @@ from network import SegNet, SegUNet, SegMobileUNet
 from tqdm import tqdm
 from torchinfo import summary
 import os
+import random
+import numpy as np
+from lion_pytorch import Lion
 
 
 def get_confusion_matrix_elements(predicted, target, class_index):
@@ -76,8 +79,9 @@ def train_epoch(model, dataloader, criterion, optimizer, write_img=True, denorm_
         # 前向傳遞
         outputs = model(batch_img)
         # 計算 loss
-        loss = criterion(outputs, batch_trimap)
+        loss = criterion(outputs.flatten(2), batch_trimap.flatten(1))
         # 反向傳遞, 更新參數
+        loss = loss.mean()
         loss.backward()
         optimizer.step()
         # 紀錄 loss, 並顯示在 tqdm 進度條上
@@ -116,7 +120,7 @@ def validate(model, dataloader, criterion, device=None):
             # 前向傳遞
             outputs = model(batch_img)
             # 計算 loss
-            loss = criterion(outputs, batch_trimap)
+            loss = criterion(outputs, batch_trimap).mean()
             running_loss += loss.item()
             # 紀錄預測結果與真實結果
             preds.append(torch.argmax(outputs, 1).cpu())
@@ -129,12 +133,28 @@ def validate(model, dataloader, criterion, device=None):
     return running_loss / len(dataloader), miou, ious, mprecision, mrecall
 
 
+def seed_everything(seed=9527):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+    os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+
 if __name__ == '__main__':
+    # 設定隨機種子
+    seed_everything()
     # 設定訓練參數
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('Using device:', device)
     batch_size = 128
-    learning_rate = 0.001
+    learning_rate = 0.0005
     num_epochs = 50
     # 載入資料集, 設定 transform
     dataset_path = r'..\..\dataset\Oxford-IIIT Pet'
@@ -154,7 +174,7 @@ if __name__ == '__main__':
     train_dataset = OxfordPetsDataset(dataset_path, 'trainval.txt', train_transform_joint, train_transform_color)
     valid_dataset = OxfordPetsDataset(dataset_path, 'test.txt', valid_transform_joint)
     # 建立 DataLoader
-    n_workers = 3 if os.name == 'nt' else 8
+    n_workers = 2 if os.name == 'nt' else 8
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=n_workers)
     valid_loader = DataLoader(valid_dataset, batch_size=int(batch_size * 1.5), shuffle=True, num_workers=n_workers)
     denorm_func = train_dataset.denorm
@@ -172,8 +192,8 @@ if __name__ == '__main__':
         # 建立 loss function, optimizer
         train_loss = []
         val_loss = []
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        criterion = nn.CrossEntropyLoss(reduction='none')
+        optimizer = Lion(model.parameters(), lr=learning_rate)
         # 建立 tensorboard writer
         writer = SummaryWriter(f'runs/{model_name}')
         # 將模型結構寫入 tensorboard
