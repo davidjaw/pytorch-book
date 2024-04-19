@@ -55,28 +55,20 @@ class TransformerClassifier(nn.Module):
         # 輸出層
         self.decoder = nn.Linear(emb_size, nclass)
 
-    def generate_square_subsequent_mask(self, sz):
-        # 生成一個上三角矩陣, 用來遮蔽未來資訊
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        return mask
-
-    def forward(self, src, src_mask, tri_mask=True):
+    def forward(self, src, src_mask):
         # 輸入的 src 需要經過 embedding 以及位置編碼
         src = self.embed(src)
         # 在 src 前面加上 CLS token
         cls_tokens = self.cls_token.repeat(1, src.shape[1], 1)
-        src = torch.cat([src, cls_tokens], dim=0)
+        src = torch.cat([cls_tokens, src], dim=0)
         src = self.pos_encoder(src)
-        if tri_mask:
-            # 遮蔽未來資訊
-            src_mask = self.generate_square_subsequent_mask(src.shape[0]).to(src.device)
         # 進行 Transformer 的 encoder layers
-        output = self.transformer_encoder(src, src_mask)
+        src_mask = src_mask.T
+        output = self.transformer_encoder(src, src_key_padding_mask=src_mask)
         # 進行輸出層的轉換
-        output = self.decoder(output)
+        output = self.decoder(output[0])
         # 輸出 CLS token 的結果
-        return output[-1]
+        return output
 
 
 class RNNClassifier(nn.Module):

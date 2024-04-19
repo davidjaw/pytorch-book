@@ -7,8 +7,10 @@ from tqdm import tqdm
 
 
 def create_mask(src):
-    # 將 <pad> token 的位置之 mask 設為 0
-    src_mask = (src != 1).unsqueeze(-2)
+    # 由於會在 src 前面加入 <cls> token, 因此需要將 mask 位置往後移一位
+    src = torch.cat([torch.ones((1, src.size(1)), device=src.device).long(), src], dim=0)
+    # 將 <pad> token 的位置之 mask 設為 True
+    src_mask = (src == 1)
     return src_mask
 
 
@@ -29,7 +31,7 @@ def train(model, data_loader, epoch, writer, optimizer=None, criterion=None, dev
         if model_name == 'transformer':
             # Transformer 需要 mask 來避免 attention 到 <pad> token, 因此需要建立 mask
             src_mask = create_mask(text)
-            output = model(text, src_mask.to(device), tri_mask=True)
+            output = model(text, src_mask.to(device))
         else:
             output = model(text)
         # 計算 loss
@@ -100,6 +102,8 @@ def main():
     gru_model = GRUClassifier(vocab_size, emb_size, hidden_size, nclass, nlayers=nlayers)
     # 訓練模型
     for network_name, model in zip(['transformer', 'rnn', 'lstm', 'gru'], [transformer_model, rnn_model, lstm_model, gru_model]):
+        if network_name != 'transformer':
+            continue
         # 設定 tensorboard writer
         writer = SummaryWriter(f'runs/{network_name}2')
         # 將模型移至 device
