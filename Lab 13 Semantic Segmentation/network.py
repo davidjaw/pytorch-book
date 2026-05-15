@@ -62,6 +62,24 @@ class SegNet(nn.Module):
 
 class SegUNet(SegNet):
     # SegUNet 的 init 與 SegNet 相同, 因此不須額外呼叫 super().__init__()
+    def __init__(self, num_class):
+        super(SegUNet, self).__init__(num_class)
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2, padding=0),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.ConvTranspose2d(512, 128, kernel_size=2, stride=2, padding=0),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 64, kernel_size=2, stride=2, padding=0),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 32, kernel_size=2, stride=2, padding=0),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.Conv2d(32, num_class, kernel_size=3, stride=1, padding=1),
+        )
+
     def forward(self, x):
         """ 雖然 SegUNet 與 SegNet 的 forward 方法不同, 但是因為兩者具有相同的網路架構, 因此可以直接依照 SegNet 的 forward 方法進行呼叫 """
         # 不同於 SegNet, SegUNet 的 forward 方法將 Encoder 過程的中間特徵進行保留, 而不是一次性進行 Sequential model 的 forward
@@ -71,11 +89,11 @@ class SegUNet(SegNet):
         x = self.encoder[20:](x3)
         # Decoder 部分, SegUNet 透過將 Encoder 過程的中間特徵進行 skip connection 來保留更多空間資訊
         x = self.decoder[:3](x)
-        x = x + x3  # 將 Encoder 過程的中間特徵進行 skip connection
+        x = torch.cat([x, x3], dim=1)  # 將 Encoder 過程的中間特徵進行 skip connection
         x = self.decoder[3:6](x)
-        x = x + x2
+        x = torch.cat([x, x2], dim=1)
         x = self.decoder[6:9](x)
-        x = x + x1
+        x = torch.cat([x, x1], dim=1)
         x = self.decoder[9:](x)
         return x
 
@@ -107,22 +125,22 @@ class SegMobileUNet(nn.Module):
                 nn.ReLU(),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(96, 32, kernel_size=2, stride=2, padding=0),
+                nn.ConvTranspose2d(192, 32, kernel_size=2, stride=2, padding=0),
                 nn.BatchNorm2d(32),
                 nn.ReLU(),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(32, 24, kernel_size=2, stride=2, padding=0),
+                nn.ConvTranspose2d(64, 24, kernel_size=2, stride=2, padding=0),
                 nn.BatchNorm2d(24),
                 nn.ReLU(),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(24, 32, kernel_size=2, stride=2, padding=0),
+                nn.ConvTranspose2d(48, 32, kernel_size=2, stride=2, padding=0),
                 nn.BatchNorm2d(32),
                 nn.ReLU(),
             ),
             nn.Sequential(
-                nn.ConvTranspose2d(32, 32, kernel_size=2, stride=2, padding=0),
+                nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2, padding=0),
                 nn.BatchNorm2d(32),
                 nn.ReLU(),
                 nn.Conv2d(32, num_class, kernel_size=3, stride=1, padding=1),
@@ -148,7 +166,7 @@ class SegMobileUNet(nn.Module):
         for i in range(len(self.intermidiates)):
             # 透過 Decoder 進行邊解碼處理, 並透過 skip connection 來保留更多空間資訊
             x = self.decoder[i](x)
-            x = x + self.intermidiates[len(self.intermidiates) - i - 1]
+            x = torch.cat([x, self.intermidiates[len(self.intermidiates) - i - 1]], dim=1)
         # 最後加入輸出層
         x = self.decoder[-1](x)
         return x
